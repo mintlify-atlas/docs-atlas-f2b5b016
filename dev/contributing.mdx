@@ -1,0 +1,314 @@
+---
+title: 'Contributing to PDM'
+description: 'Set up a local development environment, run tests, follow code style guidelines, and submit changes to PDM.'
+---
+
+Contributions are welcome and include, but are not limited to:
+
+- Reporting bugs
+- Contributing code
+- Writing tests
+- Improving documentation
+
+## Setting up a development environment
+
+<Steps>
+  <Step title="Fork and clone the repository">
+    Fork the project on GitHub, then clone the **upstream** repository locally:
+
+    ```bash
+    git clone https://github.com/pdm-project/pdm.git
+    # Or via SSH:
+    git clone git@github.com:pdm-project/pdm.git
+    ```
+
+    Add your fork as a second remote so you can push branches to it:
+
+    ```bash
+    git remote add fork https://github.com/yourname/pdm.git
+    git fetch fork
+    ```
+  </Step>
+  <Step title="Create and activate a virtual environment">
+    Create a virtual environment using the standard `venv` module or any other tool you prefer:
+
+    ```bash
+    python -m venv .venv
+    ```
+
+    <Tabs>
+      <Tab title="Linux / macOS">
+    ```bash
+    . .venv/bin/activate
+    ```
+      </Tab>
+      <Tab title="Windows">
+    ```bash
+    .venv\Scripts\activate
+    ```
+      </Tab>
+    </Tabs>
+
+    Make sure pip is at least version 21.3, which is required for editable installs:
+
+    ```bash
+    python -m pip install -U "pip>=21.3"
+    python -m pip install -e .
+    ```
+  </Step>
+  <Step title="Configure PDM to use your virtual environment">
+    Tell PDM to use the virtual environment you just created:
+
+    ```bash
+    pdm config -l python.use_venv true
+    pdm config -l venv.in_project true
+    ```
+  </Step>
+  <Step title="Install development dependencies">
+    ```bash
+    pdm install
+    ```
+
+    This installs all runtime and development dependencies into the active environment.
+  </Step>
+</Steps>
+
+<Tip>
+Keep the `main` branch tracking `origin/main` and never commit directly to it. Create a new branch for each patch:
+
+```bash
+git pull origin main
+git checkout -b my-feature
+```
+</Tip>
+
+## Running tests
+
+Run the full test suite with:
+
+```bash
+pdm run test
+```
+
+For faster feedback, use `pytest-xdist` to run tests in parallel:
+
+```bash
+pdm run test -n auto
+```
+
+Integration tests are slower and often require network access. Skip them during local development:
+
+```bash
+pdm run test -n auto -m "not integration"
+```
+
+<Note>
+You can also run the test suite against all supported Python versions with `tox` (requires the `tox-pdm` plugin):
+
+```bash
+tox
+# Or via pdm:
+pdm run tox
+```
+</Note>
+
+## Code style and linting
+
+PDM uses [prek](https://github.com/j178/prek) to manage pre-commit hooks. Install it using your preferred method (see the [prek documentation](https://github.com/j178/prek?tab=readme-ov-file#installation)), then install the hooks:
+
+```bash
+prek install
+```
+
+Run linting manually at any time:
+
+```bash
+pdm run lint
+```
+
+The linting pipeline includes:
+
+<AccordionGroup>
+  <Accordion title="ruff — formatting and import sorting">
+    PDM uses `ruff` for both code formatting and import statement ordering. The CI will reject pull requests that do not pass `ruff` checks. Run `ruff format .` and `ruff check --fix .` locally before pushing.
+  </Accordion>
+  <Accordion title="mypy — static type checking">
+    The codebase is fully type-annotated. `mypy` is run as part of `pdm run lint`. Fix any type errors before opening a pull request.
+  </Accordion>
+  <Accordion title="codespell — spell checking">
+    `codespell` is used to catch common typos in source code and documentation.
+  </Accordion>
+</AccordionGroup>
+
+## Adding news fragments
+
+Every change that fixes a bug, adds a feature, or otherwise affects users requires a news fragment. Fragments are placed in the `news/` directory and named after the associated GitHub issue:
+
+```
+news/<issue_num>.<issue_type>.md
+```
+
+For example: `news/566.bugfix.md`
+
+### Issue types
+
+| Type | Use for |
+|---|---|
+| `feature` | New features and improvements |
+| `bugfix` | Bug fixes |
+| `refactor` | Code restructuring |
+| `doc` | Documentation additions or improvements |
+| `dep` | Dependency changes |
+| `removal` | Removals or deprecations |
+| `misc` | Anything that doesn't fit the other categories |
+
+The file content should be a single sentence in the imperative mood describing your change, for example: `Deduplicate the plugins list.`
+
+## Submitting changes
+
+<Steps>
+  <Step title="Create a branch">
+    Always branch off the up-to-date `main` branch:
+
+    ```bash
+    git pull origin main
+    git checkout -b fix/my-bug-fix
+    ```
+  </Step>
+  <Step title="Make your changes">
+    Write your code, add tests, and add a news fragment (see above).
+  </Step>
+  <Step title="Run lint and tests">
+    ```bash
+    pdm run lint
+    pdm run test -n auto -m "not integration"
+    ```
+  </Step>
+  <Step title="Push and open a pull request">
+    Push to your fork and open a pull request against `pdm-project/pdm`:
+
+    ```bash
+    git push fork fix/my-bug-fix
+    ```
+
+    Open the pull request on GitHub. The CI will run the full test matrix automatically.
+  </Step>
+</Steps>
+
+## Adding a new command
+
+<Steps>
+  <Step title="Create a new file in the commands package">
+    New commands live in `src/pdm/cli/commands/`. Create a file named after the command, for example `src/pdm/cli/commands/mycommand.py`.
+  </Step>
+  <Step title="Subclass BaseCommand">
+    Every command inherits from `pdm.cli.commands.base.BaseCommand`. Implement `add_arguments` and `handle`:
+
+    ```python
+    from pdm.cli.commands.base import BaseCommand
+
+
+    class Command(BaseCommand):
+        """Short description shown in pdm --help."""
+
+        name = "mycommand"
+
+        def add_arguments(self, parser):
+            parser.add_argument("target", help="The target to act on")
+
+        def handle(self, project, options):
+            project.core.ui.echo(f"Acting on {options.target}")
+    ```
+
+    <Note>
+    The class must be named `Command` for PDM's auto-discovery in `core.py` to pick it up. The `name` class attribute sets the subcommand name.
+    </Note>
+  </Step>
+  <Step title="Register in core.py (if needed)">
+    PDM auto-discovers commands by scanning `src/pdm/cli/commands/` for modules that expose a `Command` class. No manual registration is needed unless you are adding a command outside the standard discovery path.
+
+    For reference, manual registration uses:
+
+    ```python
+    core.register_command(Command, "mycommand")
+    ```
+  </Step>
+  <Step title="Write tests">
+    Add test cases in the `tests/` directory. Use the fixtures from `pdm.pytest` to create isolated project environments.
+  </Step>
+</Steps>
+
+## Project architecture
+
+Understanding the main packages helps when navigating the codebase.
+
+<CardGroup cols={2}>
+  <Card title="CLI system" icon="terminal">
+    `src/pdm/cli/commands/` — All subcommands, each as a `BaseCommand` subclass. `src/pdm/core.py` holds the `Core` class that wires together the argument parser, plugin loading, and command dispatch.
+  </Card>
+  <Card title="Project management" icon="folder">
+    `src/pdm/project/` — Reads and writes `pyproject.toml`, manages project configuration via `Config` and `ConfigItem`, and exposes the `Project` class passed to every command handler.
+  </Card>
+  <Card title="Dependency resolution" icon="git-branch">
+    `src/pdm/resolver/` — Fast dependency resolver built on `resolvelib` with custom optimizations for binary distributions and lock file generation.
+  </Card>
+  <Card title="Environment management" icon="box">
+    `src/pdm/environments/` — Abstracts over different Python environment backends including virtualenv, PEP 582 (`__pypackages__`), and system environments.
+  </Card>
+  <Card title="Installer system" icon="download">
+    `src/pdm/installers/` — Installs and uninstalls packages into site-packages with centralized cache support to avoid redundant downloads.
+  </Card>
+  <Card title="Repository models" icon="database">
+    `src/pdm/models/repositories/` — Abstracts PyPI and other package indexes. The `PyPIRepository` is the default; plugins can swap in alternative implementations via `core.repository_class`.
+  </Card>
+</CardGroup>
+
+### Key entry points
+
+| File | Purpose |
+|---|---|
+| `src/pdm/core.py` | `Core` class — argument parser setup, plugin loading, command dispatch |
+| `src/pdm/project/__init__.py` | Re-exports `Project`, `Config`, `ConfigItem` |
+| `src/pdm/cli/commands/base.py` | `BaseCommand` — base class for all CLI commands |
+| `src/pdm/signals.py` | Blinker signals for lifecycle events |
+| `src/pdm/cli/options.py` | Reusable `Option` and `ArgumentGroup` objects |
+
+## Previewing documentation
+
+Documentation requires a few extra system dependencies:
+
+```bash
+sudo apt install libffi-dev
+```
+
+<Note>
+The docs toolchain requires Python 3.10 or later.
+</Note>
+
+Serve the docs locally:
+
+```bash
+pdm run doc
+```
+
+The CLI reference and configuration reference pages are generated from templates. If you change command help text or config metadata, regenerate them:
+
+```bash
+pdm run python tasks/render_reference_docs.py
+```
+
+## Preparing a release
+
+Preview the upcoming changelog before cutting a release:
+
+```bash
+pdm run release --dry-run
+```
+
+When the output looks correct, cut the release from the `main` branch:
+
+```bash
+pdm run release
+```
+
+The GitHub Actions workflow handles creating the GitHub release and uploading distributions to PyPI automatically.

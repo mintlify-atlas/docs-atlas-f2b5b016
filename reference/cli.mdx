@@ -1,0 +1,1076 @@
+---
+title: CLI reference
+description: Complete reference for all PDM command-line commands and their flags.
+---
+
+PDM is invoked with the `pdm` command. Global flags apply to every subcommand and must be placed before the subcommand name.
+
+## Global flags
+
+| Flag | Description |
+|---|---|
+| `-V`, `--version` | Show the version and exit |
+| `-c`, `--config <file>` | Specify another config file path (env: `PDM_CONFIG_FILE`) |
+| `-v`, `--verbose` | Use `-v` for detailed output and `-vv` for more |
+| `-q`, `--quiet` | Suppress output |
+| `--no-cache` | Disable the cache for the current command |
+| `--ignore-python` | Ignore the Python path saved in `.pdm-python` |
+| `--pep582` | Enable PEP 582 mode globally |
+| `-n`, `--non-interactive` | Don't ask for confirmation |
+
+---
+
+## pdm init
+
+Initialize a `pyproject.toml` for PDM in the current directory.
+
+```bash
+pdm init [OPTIONS] [TEMPLATE]
+```
+
+<AccordionGroup>
+  <Accordion title="Flags">
+    | Flag | Description |
+    |---|---|
+    | `--copier` | Use Copier to generate the project |
+    | `--cookiecutter` | Use Cookiecutter to generate the project |
+    | `-n`, `--non-interactive` | Don't ask questions; use default values |
+    | `--python <python>` | Specify the Python version or path to use |
+    | `--dist`, `--lib` | Create a package for distribution |
+    | `--backend <backend>` | Specify the build backend (implies `--dist`). Choices: `pdm-backend`, `setuptools`, `flit`, `hatchling`, `maturin` |
+    | `--license <spdx>` | Specify the license (SPDX name) |
+    | `--name <name>` | Specify the project name |
+    | `--project-version <version>` | Specify the project's initial version |
+    | `--no-git` | Do not initialize a git repository |
+    | `-r`, `--overwrite` | Overwrite existing files |
+    | `TEMPLATE` | Project template — a local path or a Git URL |
+    | `--skip <hook>` | Skip running named hook(s) |
+  </Accordion>
+</AccordionGroup>
+
+<CodeGroup>
+```bash Interactive
+pdm init
+```
+
+```bash Non-interactive with defaults
+pdm init --non-interactive --python 3.11 --dist --backend pdm-backend --name mylib
+```
+
+```bash From a Git template via Copier
+pdm init --copier https://github.com/example/template.git
+```
+</CodeGroup>
+
+---
+
+## pdm new
+
+Create a new Python project at a given path. Accepts the same flags as `pdm init`.
+
+```bash
+pdm new [OPTIONS] <project_path>
+```
+
+```bash
+pdm new my-awesome-project
+pdm new --dist --backend pdm-backend packages/mylib
+```
+
+---
+
+## pdm add
+
+Add package(s) to `pyproject.toml` and install them.
+
+```bash
+pdm add [OPTIONS] PACKAGES...
+```
+
+<AccordionGroup>
+  <Accordion title="Flags">
+    | Flag | Default | Description |
+    |---|---|---|
+    | `-d`, `--dev` | `false` | Add packages to dev dependencies |
+    | `-G`, `--group <group>` | — | Target dependency group |
+    | `--no-sync` | — | Only write `pyproject.toml`; skip working set sync |
+    | `-e`, `--editable <pkg>` | — | Add an editable dependency (`-e path/to/pkg`) |
+    | `--save-compatible` | — | Save compatible version specifier (`~=x.y`) |
+    | `--save-wildcard` | — | Save wildcard version specifier (`*`) |
+    | `--save-exact` | — | Save exact version specifier (`==x.y.z`) |
+    | `--save-minimum` | — | Save minimum version specifier (`>=x.y.z`) (default) |
+    | `--update-reuse` | — | Reuse pinned versions already present in the lock file |
+    | `--update-eager` | — | Update dependencies and their sub-dependencies eagerly |
+    | `--update-all` | — | Update all dependencies |
+    | `--pre`, `--prerelease` | — | Allow pre-release versions |
+    | `-u`, `--unconstrained` | — | Ignore existing constraints from the lock file |
+    | `--no-editable` | — | Install non-editable versions |
+    | `--no-self` | — | Don't install the project itself |
+    | `--dry-run` | — | Show what would be done without modifying anything |
+    | `--fail-fast` | — | Stop on first installation failure |
+    | `--lockfile <path>` | — | Specify a custom lock file path |
+    | `--frozen-lockfile` | — | Don't update the lock file |
+    | `--override <req>` | — | Override a dependency version |
+    | `--skip <hook>` | — | Skip named hook(s) |
+    | `--venv <name>` | — | Run inside a named virtualenv |
+  </Accordion>
+</AccordionGroup>
+
+<CodeGroup>
+```bash Add to default dependencies
+pdm add requests
+```
+
+```bash Add multiple packages with version constraints
+pdm add "flask>=2.0" "sqlalchemy>=2.0,<3.0"
+```
+
+```bash Add to dev dependencies
+pdm add -d pytest black mypy
+```
+
+```bash Add to a named group
+pdm add -G docs sphinx sphinx-rtd-theme
+```
+
+```bash Add an editable local package
+pdm add -e ./path/to/local-pkg
+```
+</CodeGroup>
+
+---
+
+## pdm remove
+
+Remove packages from `pyproject.toml` and uninstall them.
+
+```bash
+pdm remove [OPTIONS] PACKAGES...
+```
+
+<AccordionGroup>
+  <Accordion title="Flags">
+    | Flag | Default | Description |
+    |---|---|---|
+    | `-d`, `--dev` | `false` | Remove from dev dependencies |
+    | `-G`, `--group <group>` | — | Target dependency group |
+    | `--no-sync` | — | Only update `pyproject.toml`; skip uninstalling |
+    | `--no-editable` | — | Don't remove editable installs |
+    | `--no-self` | — | Don't remove the project itself |
+    | `--dry-run` | — | Show what would be removed without making changes |
+    | `--fail-fast` | — | Stop on first failure |
+    | `--lockfile <path>` | — | Specify a custom lock file path |
+    | `--frozen-lockfile` | — | Don't update the lock file |
+    | `--override <req>` | — | Override a dependency version |
+    | `--skip <hook>` | — | Skip named hook(s) |
+    | `--venv <name>` | — | Run inside a named virtualenv |
+  </Accordion>
+</AccordionGroup>
+
+```bash
+pdm remove requests
+pdm remove -d pytest
+pdm remove -G docs sphinx
+```
+
+---
+
+## pdm update
+
+Update package(s) in `pyproject.toml` and the lock file.
+
+```bash
+pdm update [OPTIONS] [PACKAGES...]
+```
+
+<AccordionGroup>
+  <Accordion title="Flags">
+    | Flag | Default | Description |
+    |---|---|---|
+    | `-G`, `--group <group>` | — | Target dependency group |
+    | `-d`, `--dev` | — | Update dev dependencies |
+    | `--default` / `--no-default` | — | Whether to include the default group |
+    | `-t`, `--top` | `false` | Only update packages listed in `pyproject.toml` (not transitive) |
+    | `--dry-run`, `--outdated` | `false` | Show the diff without modifying the lock file |
+    | `--no-sync` | — | Update the lock file only; don't sync packages |
+    | `--update-reuse` | — | Reuse pinned versions where possible |
+    | `--update-eager` | — | Eagerly update sub-dependencies |
+    | `--update-all` | default | Update all packages |
+    | `--pre`, `--prerelease` | — | Allow pre-release versions |
+    | `-u`, `--unconstrained` | — | Ignore version constraints in `pyproject.toml` |
+    | `--save-compatible` / `--save-exact` / `--save-minimum` / `--save-wildcard` | — | Version save strategy |
+    | `--no-editable` | — | Don't install editable packages |
+    | `--no-self` | — | Don't install the project itself |
+    | `--fail-fast` | — | Stop on first failure |
+    | `--lockfile <path>` | — | Custom lock file path |
+    | `--frozen-lockfile` | — | Don't write to the lock file |
+    | `--override <req>` | — | Override a dependency |
+    | `--skip <hook>` | — | Skip named hook(s) |
+    | `--venv <name>` | — | Run inside a named virtualenv |
+  </Accordion>
+</AccordionGroup>
+
+<CodeGroup>
+```bash Update all packages
+pdm update
+```
+
+```bash Update specific packages
+pdm update requests flask
+```
+
+```bash Show outdated packages
+pdm update --dry-run
+```
+
+```bash Update only top-level deps (not transitive)
+pdm update --top
+```
+</CodeGroup>
+
+---
+
+## pdm install
+
+Install dependencies from the lock file.
+
+```bash
+pdm install [OPTIONS]
+```
+
+<AccordionGroup>
+  <Accordion title="Flags">
+    | Flag | Description |
+    |---|---|
+    | `--check` | Fail if the lock file is out of date |
+    | `--plugins` | Install plugins declared in `pyproject.toml` |
+    | `-G`, `--group <group>` | Include a dependency group (repeatable) |
+    | `-d`, `--dev` / `--no-dev` | Include/exclude dev dependencies |
+    | `--default` / `--no-default` | Include/exclude default group |
+    | `--no-editable` | Install non-editable versions of editable packages |
+    | `--no-self` | Don't install the project itself |
+    | `--dry-run` | Show changes without installing |
+    | `--fail-fast` | Stop on first failure |
+    | `--lockfile <path>` | Custom lock file path |
+    | `--frozen-lockfile` | Don't update the lock file |
+    | `--override <req>` | Override a dependency version |
+    | `--skip <hook>` | Skip named hook(s) |
+    | `--venv <name>` | Run inside a named virtualenv |
+  </Accordion>
+</AccordionGroup>
+
+<CodeGroup>
+```bash Install all dependencies
+pdm install
+```
+
+```bash Install without dev dependencies
+pdm install --no-dev
+```
+
+```bash Install a specific group
+pdm install -G test
+```
+
+```bash Check if lock file is current
+pdm install --check
+```
+</CodeGroup>
+
+---
+
+## pdm sync
+
+Synchronize the current working set with the lock file.
+
+```bash
+pdm sync [OPTIONS]
+```
+
+<Note>
+`pdm sync` always requires a valid, existing lock file. Use `pdm install` if you want PDM to lock and then sync in one step.
+</Note>
+
+<AccordionGroup>
+  <Accordion title="Flags">
+    | Flag | Description |
+    |---|---|
+    | `-r`, `--reinstall` | Force reinstall of existing dependencies |
+    | `-G`, `--group <group>` | Include a dependency group (repeatable) |
+    | `-d`, `--dev` / `--no-dev` | Include/exclude dev dependencies |
+    | `--default` / `--no-default` | Include/exclude default group |
+    | `--clean` | Remove packages not in the lock file |
+    | `--only-keep` | Only keep the packages in the selected groups |
+    | `--no-editable` | Don't install in editable mode |
+    | `--no-self` | Don't install the project itself |
+    | `--dry-run` | Show changes without applying |
+    | `--lockfile <path>` | Custom lock file path |
+    | `--skip <hook>` | Skip named hook(s) |
+    | `--venv <name>` | Run inside a named virtualenv |
+  </Accordion>
+</AccordionGroup>
+
+```bash
+pdm sync
+pdm sync --clean
+pdm sync -G test --no-self
+```
+
+---
+
+## pdm lock
+
+Resolve and lock dependencies into the lock file.
+
+```bash
+pdm lock [OPTIONS]
+```
+
+<AccordionGroup>
+  <Accordion title="Flags">
+    | Flag | Description |
+    |---|---|
+    | `--refresh` | Refresh hashes in the lock file without re-resolving |
+    | `--check` | Exit with error if the lock file is out of date |
+    | `--update-reuse` | Reuse pinned versions already in the lock file |
+    | `--update-reuse-installed` | Reuse installed packages where possible |
+    | `--exclude-newer <date>` | Exclude packages newer than this date (`YYYY-MM-DD` or relative like `7d`) |
+    | `--python <range>` | Lock for a specific Python range (e.g. `>=3.9`) |
+    | `--platform <platform>` | Lock for a specific platform (e.g. `linux`, `windows`, `macos`) |
+    | `--implementation <impl>` | Lock for a Python implementation (e.g. `cpython`, `pypy`) |
+    | `--append` | Append the result to the current lock file instead of replacing it |
+    | `-G`, `--group <group>` | Include dependency group(s) |
+    | `--no-default` | Exclude the default group |
+    | `--lockfile <path>` | Custom lock file path |
+    | `--no-isolation` | Don't isolate the build environment |
+    | `--config-setting <key=val>` | Pass config settings to the build backend |
+    | `--override <req>` | Override a dependency version |
+    | `--skip <hook>` | Skip named hook(s) |
+    | `--strategy-change <strategy>` | Change the lock strategy for this run |
+  </Accordion>
+</AccordionGroup>
+
+<CodeGroup>
+```bash Lock all dependencies
+pdm lock
+```
+
+```bash Verify lock file is current
+pdm lock --check
+```
+
+```bash Refresh file hashes only
+pdm lock --refresh
+```
+
+```bash Lock for a cross-platform target
+pdm lock --python ">=3.9" --platform linux --append
+```
+</CodeGroup>
+
+---
+
+## pdm run
+
+Run commands or scripts with the project's virtual environment loaded.
+
+```bash
+pdm run [OPTIONS] [SCRIPT] [ARGS...]
+```
+
+<AccordionGroup>
+  <Accordion title="Flags">
+    | Flag | Description |
+    |---|---|
+    | `-l`, `--list` | Show all available scripts defined in `pyproject.toml` |
+    | `-j`, `--json` | Output all script info as JSON |
+    | `-s`, `--site-packages` | Load system site-packages from the selected interpreter |
+    | `--recreate` | Recreate the script's isolated environment (for self-contained scripts) |
+    | `--skip <hook>` | Skip named hook(s) |
+    | `--venv <name>` | Run inside a named virtualenv |
+  </Accordion>
+</AccordionGroup>
+
+<CodeGroup>
+```bash Run a script defined in pyproject.toml
+pdm run lint
+```
+
+```bash Run an arbitrary command in the project environment
+pdm run python -c "import sys; print(sys.version)"
+```
+
+```bash List available scripts
+pdm run --list
+```
+
+```bash Pass extra arguments to a script
+pdm run test -k "test_feature"
+```
+</CodeGroup>
+
+<Tip>
+You can also invoke a script directly by name as a shortcut: `pdm lint` is equivalent to `pdm run lint` if `lint` is defined as a script.
+</Tip>
+
+---
+
+## pdm build
+
+Build artifacts for distribution (sdist and/or wheel).
+
+```bash
+pdm build [OPTIONS]
+```
+
+<AccordionGroup>
+  <Accordion title="Flags">
+    | Flag | Default | Description |
+    |---|---|---|
+    | `--no-sdist` | — | Don't build the source tarball |
+    | `--no-wheel` | — | Don't build the wheel |
+    | `-d`, `--dest <dir>` | `dist` | Output directory for built artifacts |
+    | `--no-clean` | — | Don't clean the output directory before building |
+    | `--no-isolation` | — | Don't isolate the build environment |
+    | `--config-setting <key=val>` | — | Pass config settings to the build backend |
+    | `--skip <hook>` | — | Skip named hook(s) |
+  </Accordion>
+</AccordionGroup>
+
+```bash
+pdm build
+pdm build --no-sdist --dest out/
+pdm build --no-isolation
+```
+
+---
+
+## pdm publish
+
+Build and publish the project to PyPI (or another repository).
+
+```bash
+pdm publish [OPTIONS]
+```
+
+<AccordionGroup>
+  <Accordion title="Flags">
+    | Flag | Description |
+    |---|---|
+    | `-r`, `--repository <name\|url>` | Repository name or URL (env: `PDM_PUBLISH_REPO`, default: `pypi`) |
+    | `-u`, `--username <user>` | Username (env: `PDM_PUBLISH_USERNAME`) |
+    | `-P`, `--password <pass>` | Password (env: `PDM_PUBLISH_PASSWORD`) |
+    | `-S`, `--sign` | Sign uploads with PGP |
+    | `-i`, `--identity <id>` | GPG identity to sign with |
+    | `-c`, `--comment <text>` | Comment to include with the distribution |
+    | `--no-build` | Skip building; upload from `--dest` directly |
+    | `-d`, `--dest <dir>` | Directory of artifacts to upload (default: `dist`) |
+    | `--skip-existing` | Skip files that already exist in the repository |
+    | `--no-very-ssl` | Disable SSL verification |
+    | `--ca-certs <path>` | Path to a CA certificate bundle (env: `PDM_PUBLISH_CA_CERTS`) |
+    | `--skip <hook>` | Skip named hook(s) |
+  </Accordion>
+</AccordionGroup>
+
+<CodeGroup>
+```bash Publish to PyPI
+pdm publish
+```
+
+```bash Publish to TestPyPI
+pdm publish -r testpypi
+```
+
+```bash Publish without rebuilding
+pdm publish --no-build -d dist/
+```
+</CodeGroup>
+
+---
+
+## pdm config
+
+Display or modify configuration values.
+
+```bash
+pdm config [OPTIONS] [KEY] [VALUE]
+```
+
+<AccordionGroup>
+  <Accordion title="Flags">
+    | Flag | Description |
+    |---|---|
+    | `-l`, `--local` | Write to the project-local config file (`pdm.toml`) |
+    | `-d`, `--delete` | Unset a configuration key |
+    | `-e`, `--edit` | Open the config file in `$EDITOR` |
+  </Accordion>
+</AccordionGroup>
+
+<CodeGroup>
+```bash List all configuration
+pdm config
+```
+
+```bash Get a single key
+pdm config python.use_venv
+```
+
+```bash Set a global key
+pdm config pypi.url https://mirrors.example.com/simple
+```
+
+```bash Set a project-local key
+pdm config --local python.use_venv false
+```
+
+```bash Delete a key
+pdm config --delete pypi.url
+```
+</CodeGroup>
+
+---
+
+## pdm info
+
+Show project information (Python interpreter, paths, environment).
+
+```bash
+pdm info [OPTIONS]
+```
+
+<AccordionGroup>
+  <Accordion title="Flags — mutually exclusive">
+    | Flag | Description |
+    |---|---|
+    | `--python` | Print the path to the Python interpreter |
+    | `--where` | Print the project root directory |
+    | `--packages` | Print the local packages root |
+    | `--env` | Print PEP 508 environment markers as JSON |
+    | `--json` | Dump all information as JSON |
+    | `--venv <name>` | Target a named virtualenv |
+  </Accordion>
+</AccordionGroup>
+
+```bash
+pdm info
+pdm info --python
+pdm info --where
+pdm info --env
+pdm info --json
+```
+
+---
+
+## pdm show
+
+Show package information (from PyPI or the local working set).
+
+```bash
+pdm show [OPTIONS] [PACKAGE]
+```
+
+<AccordionGroup>
+  <Accordion title="Flags">
+    | Flag | Description |
+    |---|---|
+    | `PACKAGE` | Package name to query; omit to show the current project |
+    | `--name` | Show the package name only |
+    | `--version` | Show the package version only |
+    | `--summary` | Show the package summary only |
+    | `--license` | Show the package license only |
+    | `--platform` | Show the package platform only |
+    | `--keywords` | Show the package keywords only |
+    | `--venv <name>` | Target a named virtualenv |
+  </Accordion>
+</AccordionGroup>
+
+```bash
+pdm show requests
+pdm show --version requests
+pdm show          # show current project's own info
+```
+
+---
+
+## pdm list
+
+List packages installed in the current working set.
+
+```bash
+pdm list [OPTIONS] [PATTERNS...]
+```
+
+<AccordionGroup>
+  <Accordion title="Flags">
+    | Flag | Description |
+    |---|---|
+    | `--freeze` | Output in `requirements.txt` format |
+    | `--tree`, `--graph` | Display a dependency tree |
+    | `-r`, `--reverse` | Reverse the dependency tree |
+    | `--resolve` | Resolve from the lock file instead of the working set |
+    | `--fields <fields>` | Comma-separated fields to show. Available: `name,version,location,groups,homepage,licenses` |
+    | `--sort <field>` | Sort by one or more field names |
+    | `--csv` | Output as CSV |
+    | `--json` | Output as JSON |
+    | `--markdown` | Output as Markdown (includes license text) |
+    | `--include <groups>` | Dependency groups to include |
+    | `--exclude <groups>` | Dependency groups to exclude |
+    | `PATTERNS` | Glob patterns to filter packages (e.g. `flask-*`) |
+    | `--venv <name>` | Target a named virtualenv |
+  </Accordion>
+</AccordionGroup>
+
+<CodeGroup>
+```bash List all packages (table)
+pdm list
+```
+
+```bash Show dependency tree
+pdm list --tree
+```
+
+```bash Output as requirements.txt format
+pdm list --freeze
+```
+
+```bash Export as JSON with license info
+pdm list --json --fields name,version,licenses
+```
+
+```bash Filter by pattern
+pdm list flask-*
+```
+</CodeGroup>
+
+---
+
+## pdm venv
+
+Manage virtualenvs for the project. Run `pdm venv <subcommand>`.
+
+```bash
+pdm venv [--path <name>] [--python <name>]
+pdm venv <subcommand> [OPTIONS]
+```
+
+| Top-level flag | Description |
+|---|---|
+| `--path <name>` | Print the path to the named virtualenv |
+| `--python <name>` | Print the Python interpreter path for the named virtualenv |
+
+### pdm venv create
+
+Create a virtualenv.
+
+```bash
+pdm venv create [OPTIONS] [PYTHON] [VENV_ARGS...]
+```
+
+| Flag | Description |
+|---|---|
+| `-w`, `--with <backend>` | Backend: `virtualenv`, `venv`, `conda`, or `uv` |
+| `-f`, `--force` | Recreate if it already exists |
+| `-n`, `--name <name>` | Name the virtualenv |
+| `--with-pip` | Install pip into the virtualenv |
+| `PYTHON` | Python version or path for the virtualenv |
+
+```bash
+pdm venv create
+pdm venv create 3.11
+pdm venv create --with virtualenv -n dev 3.10
+```
+
+### pdm venv list
+
+List all virtualenvs associated with this project.
+
+```bash
+pdm venv list
+```
+
+### pdm venv remove
+
+Remove a named virtualenv.
+
+```bash
+pdm venv remove [OPTIONS] <env>
+```
+
+| Flag | Description |
+|---|---|
+| `-y`, `--yes` | Skip confirmation prompt |
+
+```bash
+pdm venv remove dev
+pdm venv remove -y 3.11
+```
+
+### pdm venv activate
+
+Print the shell command to activate a virtualenv.
+
+```bash
+pdm venv activate [env]
+```
+
+```bash
+# Evaluate the output in your shell:
+eval $(pdm venv activate dev)
+```
+
+### pdm venv purge
+
+Remove all (or selected) centralised virtualenvs.
+
+```bash
+pdm venv purge [OPTIONS]
+```
+
+| Flag | Description |
+|---|---|
+| `-f`, `--force` | Purge all without confirmation |
+| `-i`, `--interactive` | Interactively select which to purge |
+
+---
+
+## pdm python
+
+Manage Python interpreters. Alias: `pdm py`.
+
+```bash
+pdm python <subcommand>
+```
+
+### pdm python install
+
+Download and install a Python interpreter.
+
+```bash
+pdm python install [OPTIONS] [VERSION]
+```
+
+| Flag | Description |
+|---|---|
+| `VERSION` | Python version string (e.g. `3.11.9`, `cpython@3.12.1`) |
+| `-l`, `--list` | List all available installable versions |
+| `--min` | Install the minimum matching version instead of the highest |
+
+```bash
+pdm python install 3.12
+pdm python install cpython@3.11.9
+pdm python install --list
+```
+
+### pdm python list
+
+List all Python interpreters installed by PDM.
+
+```bash
+pdm python list
+```
+
+### pdm python remove
+
+Remove a Python interpreter installed by PDM.
+
+```bash
+pdm python remove <version>
+```
+
+```bash
+pdm python remove cpython@3.11.9
+```
+
+### pdm python link
+
+Link an external interpreter into PDM's managed interpreter directory.
+
+```bash
+pdm python link [--name <name>] <interpreter>
+```
+
+### pdm python find
+
+Find a Python interpreter by version or request string.
+
+```bash
+pdm python find [--managed] <request>
+```
+
+| Flag | Description |
+|---|---|
+| `--managed` | Only search PDM-managed installations |
+
+---
+
+## pdm cache
+
+Control PDM's caches.
+
+```bash
+pdm cache <subcommand>
+```
+
+### pdm cache info
+
+Show cache locations and sizes.
+
+```bash
+pdm cache info
+```
+
+### pdm cache list
+
+List built wheels in the cache.
+
+```bash
+pdm cache list [PATTERN]
+```
+
+### pdm cache remove
+
+Remove files matching a glob pattern from the wheel cache.
+
+```bash
+pdm cache remove <pattern>
+```
+
+```bash
+pdm cache remove "requests-*"
+```
+
+### pdm cache clear
+
+Clear one or all cache types.
+
+```bash
+pdm cache clear [TYPE]
+```
+
+Available types: `hashes`, `http`, `wheels`, `metadata`, `packages`. Omit to clear all.
+
+```bash
+pdm cache clear
+pdm cache clear wheels
+```
+
+---
+
+## pdm self
+
+Manage the PDM installation itself. Alias: `pdm plugin`.
+
+```bash
+pdm self <subcommand>
+```
+
+### pdm self update
+
+Update PDM to the latest release.
+
+```bash
+pdm self update [OPTIONS]
+```
+
+| Flag | Description |
+|---|---|
+| `--head` | Update to the latest commit on `main` |
+| `--pre` | Update to the latest pre-release |
+| `--no-frozen-deps` | Don't pin dependency versions during update |
+| `--pip-args <args>` | Extra arguments passed to `pip install` |
+
+```bash
+pdm self update
+pdm self update --pre
+```
+
+### pdm self add
+
+Install a package into PDM's own environment.
+
+```bash
+pdm self add [OPTIONS] PACKAGES...
+```
+
+| Flag | Description |
+|---|---|
+| `--pip-args <args>` | Extra arguments passed to `pip install` |
+
+```bash
+pdm self add copier
+pdm self add "pdm-multirun>=1.0"
+```
+
+### pdm self remove
+
+Remove a package from PDM's own environment.
+
+```bash
+pdm self remove [OPTIONS] PACKAGES...
+```
+
+| Flag | Description |
+|---|---|
+| `-y`, `--yes` | Skip confirmation |
+| `--pip-args <args>` | Extra arguments passed to `pip uninstall` |
+
+### pdm self list
+
+List packages installed in PDM's environment.
+
+```bash
+pdm self list [--plugins]
+```
+
+| Flag | Description |
+|---|---|
+| `--plugins` | Show only PDM plugins |
+
+---
+
+## pdm use
+
+Select the Python interpreter for the current project.
+
+```bash
+pdm use [OPTIONS] [PYTHON]
+```
+
+<AccordionGroup>
+  <Accordion title="Flags">
+    | Flag | Description |
+    |---|---|
+    | `PYTHON` | Python version string or path |
+    | `-f`, `--first` | Select the first matched interpreter without prompting |
+    | `--auto-install-min` | Auto-install the minimum matching version if none is found |
+    | `--auto-install-max` | Auto-install the maximum matching version if none is found |
+    | `-i`, `--ignore-remembered` | Ignore the previously remembered selection |
+    | `--no-version-file` | Don't write a `.python-version` file |
+    | `--venv <name>` | Use the interpreter inside the named virtualenv |
+    | `--skip <hook>` | Skip named hook(s) |
+  </Accordion>
+</AccordionGroup>
+
+```bash
+pdm use 3.11
+pdm use /usr/bin/python3.12
+pdm use --first 3.10
+```
+
+---
+
+## pdm export
+
+Export the resolved packages to various formats (e.g. `requirements.txt`).
+
+```bash
+pdm export [OPTIONS]
+```
+
+| Flag | Description |
+|---|---|
+| `-f`, `--format <fmt>` | Output format (e.g. `requirements`, `pylock`) |
+| `-o`, `--output <file>` | Write output to a file instead of stdout |
+| `-G`, `--group <group>` | Dependency groups to include (repeatable) |
+| `--no-default` | Exclude the default group |
+| `-d`, `--dev` | Include dev dependencies |
+| `--no-markers` | Strip environment markers |
+| `--no-hashes` | Strip file hashes |
+| `--lockfile <path>` | Custom lock file path |
+
+```bash
+pdm export -f requirements -o requirements.txt
+pdm export -f requirements --no-hashes
+```
+
+---
+
+## pdm import
+
+Import dependencies from another format into `pyproject.toml`.
+
+```bash
+pdm import [OPTIONS] <filename>
+```
+
+| Flag | Description |
+|---|---|
+| `-f`, `--format <fmt>` | Source format (auto-detected if omitted) |
+| `-d`, `--dev` | Import as dev dependencies |
+| `-G`, `--group <group>` | Target dependency group |
+
+```bash
+pdm import requirements.txt
+pdm import -f pipfile Pipfile
+```
+
+---
+
+## pdm outdated
+
+Check for outdated packages and show the latest available versions.
+
+```bash
+pdm outdated [OPTIONS] [PATTERNS...]
+```
+
+| Flag | Description |
+|---|---|
+| `PATTERNS` | Glob patterns to filter which packages to check (e.g. `flask-*`) |
+| `--json` | Output results in JSON format |
+| `--include-sub` | Include sub-dependencies (transitive), not just direct dependencies |
+
+```bash
+pdm outdated
+pdm outdated requests flask-*
+pdm outdated --json
+pdm outdated --include-sub
+```
+
+---
+
+## pdm fix
+
+Detect and fix project problems for the current PDM version.
+
+```bash
+pdm fix [OPTIONS] [PROBLEM]
+```
+
+| Flag | Description |
+|---|---|
+| `PROBLEM` | Fix a specific named problem only; omit to fix all |
+| `--dry-run` | Show problems without making any changes |
+
+```bash
+pdm fix --dry-run   # list problems
+pdm fix             # fix all problems
+```
+
+---
+
+## pdm completion
+
+Generate shell completion scripts.
+
+```bash
+pdm completion [SHELL]
+```
+
+<Tabs>
+  <Tab title="bash">
+    ```bash
+    pdm completion bash >> ~/.bash_completion
+    ```
+  </Tab>
+  <Tab title="zsh">
+    ```bash
+    pdm completion zsh > ~/.zfunc/_pdm
+    ```
+  </Tab>
+  <Tab title="fish">
+    ```bash
+    pdm completion fish > ~/.config/fish/completions/pdm.fish
+    ```
+  </Tab>
+</Tabs>

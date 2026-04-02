@@ -1,0 +1,237 @@
+---
+title: "Advanced usage"
+description: "Use PDM in CI/CD pipelines, Docker multi-stage builds, monorepos, automated testing, and pre-commit hooks."
+---
+
+## Use PDM in CI/CD
+
+PDM requires Python 3.9 or newer. If your project is tested against multiple Python versions, make sure PDM itself is installed using a compatible Python version — which may differ from the target Python version being tested.
+
+### GitHub Actions
+
+The [pdm-project/setup-pdm](https://github.com/marketplace/actions/setup-pdm) action handles PDM installation in GitHub Actions:
+
+```yaml
+Testing:
+  runs-on: ${{ matrix.os }}
+  strategy:
+    matrix:
+      python-version: ['3.9', '3.10', '3.11', '3.12', '3.13']
+      os: [ubuntu-latest, macOS-latest, windows-latest]
+
+  steps:
+    - uses: actions/checkout@v4
+    - name: Set up PDM
+      uses: pdm-project/setup-pdm@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install dependencies
+      run: |
+        pdm sync -d -G testing
+    - name: Run Tests
+      run: |
+        pdm run -v pytest tests
+```
+
+<Warning>
+There is a known compatibility issue with PDM's parallel install on Ubuntu GitHub Actions runners. If you encounter failures, either set `install.parallel` to `false` or set the environment variable `LD_PRELOAD=/lib/x86_64-linux-gnu/libgcc_s.so.1`. The `pdm-project/setup-pdm` action handles this automatically.
+</Warning>
+
+<Note>
+If your CI scripts run without a user set, PDM may fail to create its cache directory. Work around this by setting `HOME` to a writable directory:
+
+```bash
+export HOME=/tmp/home
+```
+</Note>
+
+## Docker multi-stage builds
+
+Use PDM in a multi-stage Dockerfile to install dependencies and the project in the build stage, then copy the virtualenv into the final image:
+
+```dockerfile
+ARG PYTHON_BASE=3.10-slim
+# build stage
+FROM python:$PYTHON_BASE AS builder
+
+# install PDM
+RUN pip install -U pdm
+# disable update check
+ENV PDM_CHECK_UPDATE=false
+# copy files
+COPY pyproject.toml pdm.lock README.md /project/
+COPY src/ /project/src
+
+# install dependencies and project into the local packages directory
+WORKDIR /project
+RUN pdm install --check --prod --no-editable
+
+# run stage
+FROM python:$PYTHON_BASE
+
+# retrieve packages from build stage
+COPY --from=builder /project/.venv/ /project/.venv
+ENV PATH="/project/.venv/bin:$PATH"
+# set command/entrypoint, adapt to fit your needs
+COPY src /project/src
+CMD ["python", "src/__main__.py"]
+```
+
+## Monorepo support
+
+PDM supports monorepos where multiple sub-packages share a single `pdm.lock` file. Sub-packages can depend on each other.
+
+**`project/pyproject.toml`:**
+
+```toml
+[dependency-groups]
+dev = [
+    "-e file:///${PROJECT_ROOT}/packages/foo-core",
+    "-e file:///${PROJECT_ROOT}/packages/foo-cli",
+    "-e file:///${PROJECT_ROOT}/packages/foo-app",
+]
+```
+
+**`packages/foo-cli/pyproject.toml`:**
+
+```toml
+[project]
+dependencies = ["foo-core"]
+```
+
+**`packages/foo-app/pyproject.toml`:**
+
+```toml
+[project]
+dependencies = ["foo-core"]
+```
+
+Run `pdm install` from the project root to produce a single `pdm.lock` covering all sub-packages. All sub-packages are installed in editable mode.
+
+## Automated testing
+
+### Tox
+
+[Tox](https://tox.readthedocs.io/en/latest/) tests against multiple Python versions or dependency sets. Configure it to work with PDM using `PDM_IGNORE_SAVED_PYTHON`:
+
+```ini
+[tox]
+env_list = py{36,37,38},lint
+
+[testenv]
+setenv =
+    PDM_IGNORE_SAVED_PYTHON="1"
+deps = pdm
+commands =
+    pdm install --dev
+    pytest tests
+
+[testenv:lint]
+deps = pdm
+commands =
+    pdm install -G lint
+    flake8 src/
+```
+
+<Note>
+Set `pdm config python.use_venv true` so PDM installs dependencies into the Tox-managed virtualenv. Avoid running `pdm add`, `pdm remove`, `pdm update`, or `pdm lock` inside test commands — these modify `pdm.lock`.
+</Note>
+
+For a cleaner integration, use the [tox-pdm](https://github.com/pdm-project/tox-pdm) plugin:
+
+```bash
+pip install tox-pdm
+# or
+pdm add --dev tox-pdm
+```
+
+With `tox-pdm`, the `tox.ini` becomes:
+
+```ini
+[tox]
+env_list = py{36,37,38},lint
+
+[testenv]
+groups = dev
+commands =
+    pytest tests
+
+[testenv:lint]
+groups = lint
+commands =
+    flake8 src/
+```
+
+### Nox
+
+[Nox](https://nox.thea.codes/) uses a Python file for configuration. Set `PDM_IGNORE_SAVED_PYTHON` so PDM picks up the virtualenv created by Nox:
+
+```python
+import os
+import nox
+
+os.environ.update({"PDM_IGNORE_SAVED_PYTHON": "1"})
+
+@nox.session
+def tests(session):
+    session.run_always('pdm', 'install', '-G', 'test', external=True)
+    session.run('pytest')
+
+@nox.session
+def lint(session):
+    session.run_always('pdm', 'install', '-G', 'lint', external=True)
+    session.run('flake8', '--import-order-style', 'google')
+```
+
+Also ensure `python.use_venv` is `true` so Nox's virtualenv is reused. If `__pypackages__` visibility causes unexpected behavior, clear `PYTHONPATH`:
+
+```python
+os.environ.pop("PYTHONPATH", None)
+```
+
+## pre-commit hooks
+
+PDM provides [pre-commit](https://pre-commit.com/) hooks for common tasks. Add them to `.pre-commit-config.yaml`:
+
+### Export requirements.txt
+
+Keep `requirements.txt` in sync with the lock file on every commit:
+
+```yaml
+- repo: https://github.com/pdm-project/pdm
+  rev: 2.x.y # a PDM release exposing the hook
+  hooks:
+    - id: pdm-export
+      # command arguments, e.g.:
+      args: ['-o', 'requirements.txt', '--without-hashes']
+      files: ^pdm.lock$
+```
+
+### Check pdm.lock is up to date
+
+Fail if `pyproject.toml` has changed but `pdm.lock` has not been updated:
+
+```yaml
+- repo: https://github.com/pdm-project/pdm
+  rev: 2.x.y # a PDM release exposing the hook
+  hooks:
+    - id: pdm-lock-check
+```
+
+### Sync working set with pdm.lock
+
+Ensure dependencies are synced whenever you check out or merge a branch:
+
+```yaml
+- repo: https://github.com/pdm-project/pdm
+  rev: 2.x.y # a PDM release exposing the hook
+  hooks:
+    - id: pdm-sync
+      additional_dependencies:
+        - keyring
+```
+
+<Tip>
+Add `keyring` to `additional_dependencies` if you need credentials from the system keyring during sync.
+</Tip>

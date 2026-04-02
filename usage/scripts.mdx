@@ -1,0 +1,403 @@
+---
+title: "Scripts"
+description: "Run arbitrary commands and define named task shortcuts with pdm run, similar to npm run."
+---
+
+PDM lets you run commands in the context of your project environment using `pdm run`. You can also define named scripts in `pyproject.toml` to standardize how your project's tasks are invoked.
+
+## Running arbitrary commands
+
+Pass any command to `pdm run` and it will execute with your project's packages available:
+
+```bash
+pdm run flask run -p 54321
+```
+
+Any arguments after the command name are forwarded to the process as-is.
+
+## Single-file scripts (PEP 723)
+
+<Tip>Added in PDM 2.16.0.</Tip>
+
+PDM supports running single-file Python scripts that declare their own dependencies using [PEP 723 inline script metadata](https://peps.python.org/pep-0723/).
+
+```python
+# fetch_peps.py
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#   "requests<3",
+#   "rich",
+# ]
+# ///
+
+import requests
+from rich.pretty import pprint
+
+resp = requests.get("https://peps.python.org/api/peps.json")
+data = resp.json()
+pprint([(k, v["title"]) for k, v in data.items()][:10])
+```
+
+Run it with:
+
+```bash
+pdm run fetch_peps.py
+```
+
+PDM creates a temporary virtual environment, installs the declared dependencies, and runs the script. Use `--recreate` to force recreating the environment, or pass no extra flag to reuse it if it already exists.
+
+You can also embed PDM configuration inside the script metadata block:
+
+```python
+# fetch_peps.py
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#   "requests<3",
+# ]
+#
+# [[tool.pdm.source]]
+# url = "https://mypypi.org/simple"
+# name = "pypi"
+# ///
+```
+
+## Defining named scripts
+
+Add a `[tool.pdm.scripts]` table to `pyproject.toml` to define reusable named tasks:
+
+```toml
+[tool.pdm.scripts]
+start = "flask run -p 54321"
+```
+
+Run it with:
+
+```bash
+pdm run start
+```
+
+Additional arguments are appended to the command:
+
+```bash
+pdm run start -h 0.0.0.0
+# runs: flask run -p 54321 -h 0.0.0.0
+```
+
+<Note>
+If a script name doesn't conflict with a built-in PDM command, you can run it without the `run` prefix. For example, `pdm start` works if there is no built-in `start` command. However, `pdm install` always runs the built-in `install` command, not a user-defined one.
+</Note>
+
+<Note>
+`[tool.pdm.scripts]` defines development tasks that work regardless of whether the project has `distribution = true`. It is separate from `[project.scripts]`, which defines installed console entry points.
+</Note>
+
+## Script types
+
+PDM supports four types of scripts.
+
+### `cmd` — direct command
+
+A plain string is treated as a `cmd` script. You can also declare it explicitly, and optionally write it as an array to allow inline comments:
+
+```toml
+[tool.pdm.scripts]
+# Simple string form
+start = "flask run -p 54321"
+
+# Explicit cmd form
+start = {cmd = "flask run -p 54321"}
+
+# Array form (useful for comments between arguments)
+start = {cmd = [
+    "flask",
+    "run",
+    # Always use port 54321 in development
+    "-p", "54321"
+]}
+```
+
+### `shell` — shell command
+
+Shell scripts run via `subprocess.Popen` with `shell=True`. Use them when you need shell features like pipes or output redirection:
+
+```toml
+[tool.pdm.scripts]
+filter_error = {shell = "cat error.log|grep CRITICAL > critical.log"}
+```
+
+### `call` — Python callable
+
+Call a Python function directly using `<module>:<function>` notation:
+
+```toml
+[tool.pdm.scripts]
+foobar = {call = "foo_package.bar_module:main"}
+```
+
+You can pass literal arguments to the function:
+
+```toml
+[tool.pdm.scripts]
+foobar = {call = "foo_package.bar_module:main('dev')"}
+```
+
+<Note>`call` scripts have access to `sys.argv` directly and do not support the `{args}` placeholder.</Note>
+
+### `composite` — run multiple scripts in sequence
+
+A composite script runs other defined scripts in order. If one script fails, the rest are cancelled:
+
+```toml
+[tool.pdm.scripts]
+lint = "flake8"
+test = "pytest"
+all = {composite = ["lint", "test"]}
+```
+
+<Tip>Added in PDM 2.13.0: set `keep_going = true` to continue running remaining scripts even if one fails.</Tip>
+
+```toml
+[tool.pdm.scripts]
+lint = "flake8"
+test = "pytest"
+all.composite = ["lint", "test"]
+all.keep_going = true
+```
+
+When `keep_going` is true, the composite script exits with `0` if all succeeded, or the exit code of the last failing script.
+
+You can pass arguments to individual sub-scripts in the composite list:
+
+```toml
+[tool.pdm.scripts]
+all = {composite = ["lint mypackage/", "test -v tests/"]}
+```
+
+Composite scripts can also combine arbitrary commands directly:
+
+```toml
+[tool.pdm.scripts]
+mytask.composite = [
+    "echo 'Hello'",
+    "echo 'World'"
+]
+```
+
+<Note>Arguments passed on the command line are forwarded to each called task in a composite script.</Note>
+
+## Script options
+
+### `env` — environment variables
+
+Define fixed environment variables for a script:
+
+```toml
+[tool.pdm.scripts]
+start.cmd = "flask run -p 54321"
+start.env = {FOO = "bar", FLASK_DEBUG = "1"}
+```
+
+<Note>
+In `cmd` scripts, use `${VAR}` syntax for variable substitution on all platforms. In `shell` scripts, the syntax is platform-dependent (`%VAR%` on Windows, `$VAR` on bash).
+</Note>
+
+### `env_file` — dotenv file
+
+Load environment variables from a `.env` file:
+
+```toml
+[tool.pdm.scripts]
+start.cmd = "flask run -p 54321"
+start.env_file = ".env"
+```
+
+By default, variables in the dotenv file do not override existing environment variables. To allow overrides:
+
+```toml
+[tool.pdm.scripts]
+start.cmd = "flask run -p 54321"
+start.env_file.override = ".env"
+```
+
+Environment variables from different sources are loaded in this order (later sources override earlier ones):
+
+1. OS environment variables
+2. Project environment variables (`PDM_PROJECT_ROOT`, `PATH`, `VIRTUAL_ENV`, etc.)
+3. Dotenv file specified by `env_file`
+4. Variables in the `env` mapping
+
+You can reference other variables within the dotenv file:
+
+```bash
+VAR=42
+FOO=hello-${VAR}
+# FOO resolves to hello-42
+```
+
+The `${VAR:-default}` syntax provides fallback values.
+
+### `working_dir` — working directory
+
+<Tip>Added in PDM 2.13.0.</Tip>
+
+Set the working directory for a script, relative to the project root:
+
+```toml
+[tool.pdm.scripts]
+start.cmd = "flask run -p 54321"
+start.working_dir = "subdir"
+```
+
+<Tip>Added in PDM 2.20.2.</Tip>
+
+Each script also receives the `PDM_RUN_CWD` environment variable set to the original calling directory.
+
+### `site_packages` — include system site-packages
+
+By default, PDM isolates the running environment from the outer Python interpreter. System site-packages are NOT loaded unless one of the following is true:
+
+- The executable is from `PATH` but not inside `__pypackages__`
+- The `-s` / `--site-packages` flag is passed to `pdm run`
+- `site_packages = true` is set in the script table or the global `_` key
+
+### Shared options
+
+Use the special `_` key to apply options to all scripts:
+
+```toml
+[tool.pdm.scripts]
+_.env_file = ".env"
+start = "flask run -p 54321"
+migrate_db = "flask db upgrade"
+```
+
+`PDM_PROJECT_ROOT` is also injected into all scripts and points to the project root.
+
+## Arguments placeholder
+
+By default, extra arguments are appended to the end of the command. Use the `{args}` placeholder to control exactly where they go:
+
+```toml
+[tool.pdm.scripts]
+cmd = "echo '--before {args} --after'"
+shell = {shell = "echo '--before {args} --after'"}
+composite = {composite = ["cmd --something", "shell {args}"]}
+```
+
+Examples:
+
+```bash
+$ pdm run cmd --user --provided
+--before --user --provided --after
+
+$ pdm run cmd
+--before --after
+
+$ pdm run shell --user --provided
+--before --user --provided --after
+
+$ pdm run composite --user --provided
+cmd --something
+shell --before --user --provided --after
+```
+
+You can also specify default values to use when no arguments are provided:
+
+```toml
+[tool.pdm.scripts]
+test = "echo '--before {args:--default --value} --after'"
+```
+
+```bash
+$ pdm run test --user --provided
+--before --user --provided --after
+
+$ pdm run test
+--before --default --value --after
+```
+
+<Note>
+Once a `{args}` placeholder is found anywhere in a composite script, arguments are no longer automatically appended to any sub-task. You must explicitly add `{args}` to each sub-task that needs them.
+</Note>
+
+## `{pdm}` placeholder
+
+In environments where PDM might be installed under a different name or path (such as CI/CD), use `{pdm}` to reference the exact PDM entrypoint being used. It expands to `{sys.executable} -m pdm`:
+
+```toml
+[tool.pdm.scripts]
+whoami = { shell = "echo `{pdm} -V` was called as '{pdm} -V'" }
+```
+
+```bash
+$ pdm run whoami
+PDM, version 2.x.x was called as /usr/bin/python3 -m pdm -V
+```
+
+## Listing available scripts
+
+Run `pdm run --list` (or `pdm run -l`) to display all defined scripts:
+
+```bash
+$ pdm run --list
+╭─────────────┬───────┬───────────────────────────╮
+│ Name        │ Type  │ Description               │
+├─────────────┼───────┼───────────────────────────┤
+│ test_cmd    │ cmd   │ flask db upgrade          │
+│ test_script │ call  │ call a python function    │
+│ test_shell  │ shell │ shell command             │
+╰─────────────┴───────┴───────────────────────────╯
+```
+
+Add a `help` key to a script definition to control what appears in the **Description** column:
+
+```toml
+[tool.pdm.scripts]
+start.cmd = "flask run -p 54321"
+start.help = "Start the development server"
+```
+
+<Note>Scripts whose names start with `_` are treated as internal helpers and are hidden from the listing.</Note>
+
+You can also output all script info as JSON:
+
+```bash
+pdm run --json
+```
+
+## Pre and post scripts
+
+Like npm, PDM runs `pre_<name>` before and `post_<name>` after any named script:
+
+```toml
+[tool.pdm.scripts]
+pre_compress = "echo 'Preparing to compress...'"
+compress = "tar czvf compressed.tar.gz data/"
+post_compress = "echo 'Compression complete.'"
+```
+
+Running `pdm run compress` executes all three scripts in sequence. If any script fails, the remaining ones are cancelled.
+
+<Note>Pre and post scripts cannot receive arguments.</Note>
+
+## Skipping pre/post scripts
+
+Use `--skip` to bypass specific scripts or hooks:
+
+```bash
+# Skip all hooks and pre/post scripts
+pdm run --skip=:all my-task
+
+# Skip all pre_* scripts
+pdm run --skip=:pre my-task
+
+# Skip all post_* scripts
+pdm run --skip=:post my-task
+
+# Skip specific tasks by name
+pdm run --skip pre_task1,task2 my-composite
+```
+
+You can also set `PDM_SKIP_HOOKS` as an environment variable with a comma-separated list. The `--skip` flag takes precedence if both are set.

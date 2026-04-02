@@ -1,0 +1,228 @@
+---
+title: "Build and publish"
+description: "Build distribution packages and publish them to PyPI or a custom package index."
+---
+
+PDM provides first-class support for building Python packages and publishing them to package indexes. You can do everything in one step or split building and uploading for inspection.
+
+## Publish in one step
+
+```bash
+pdm publish
+```
+
+This command builds a wheel and a source distribution (sdist), then uploads both to PyPI. It is the fastest path from finished code to a published release.
+
+## Build and publish separately
+
+For more control, build first and inspect the artifacts before uploading:
+
+<Steps>
+  <Step title="Build the package">
+    ```bash
+    pdm build
+    ```
+    Artifacts are written to the `dist/` directory.
+  </Step>
+  <Step title="Inspect the artifacts">
+    Check the contents of `dist/` before uploading. You should see a `.whl` file and a `.tar.gz` file.
+  </Step>
+  <Step title="Upload without rebuilding">
+    ```bash
+    pdm publish --no-build
+    ```
+    Uploads everything in `dist/` without triggering a new build.
+  </Step>
+</Steps>
+
+## `pdm build` reference
+
+```bash
+pdm build [options]
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--no-sdist` | — | Skip building the source tarball |
+| `--no-wheel` | — | Skip building the wheel |
+| `-d`, `--dest` | `dist` | Output directory for built artifacts |
+| `--no-clean` | — | Do not delete the output directory before building |
+
+**Examples:**
+
+```bash
+# Build only a wheel
+pdm build --no-sdist
+
+# Build only an sdist
+pdm build --no-wheel
+
+# Write artifacts to a custom directory
+pdm build -d artifacts/
+```
+
+<Note>
+`pdm build` requires `tool.pdm.distribution = true` in your `pyproject.toml`. You cannot build distribution packages from a non-distribution project.
+</Note>
+
+## `pdm publish` reference
+
+```bash
+pdm publish [options]
+```
+
+| Flag | Env var | Default | Description |
+|------|---------|---------|-------------|
+| `-r`, `--repository` | `PDM_PUBLISH_REPO` | `pypi` | Repository name or upload URL |
+| `-u`, `--username` | `PDM_PUBLISH_USERNAME` | — | Username for repository authentication |
+| `-P`, `--password` | `PDM_PUBLISH_PASSWORD` | — | Password or API token |
+| `-S`, `--sign` | — | — | Sign the package with PGP |
+| `-i`, `--identity` | — | — | GPG identity to sign with |
+| `-c`, `--comment` | — | — | Comment to include with the distribution file |
+| `--no-build` | — | — | Skip building before publishing |
+| `-d`, `--dest` | — | `dist` | Directory to upload artifacts from |
+| `--skip-existing` | — | — | Skip files that already exist on the server |
+| `--ca-certs` | `PDM_PUBLISH_CA_CERTS` | — | Path to a PEM Certificate Authority bundle |
+| `--no-very-ssl` | — | — | Disable SSL verification |
+
+## Authentication
+
+PyPI requires API tokens for publishing. Use `__token__` as the username and your API token as the password:
+
+```bash
+pdm publish --username __token__ --password pypi-AgEIcHlwaS5vcmc...
+```
+
+You can also set credentials via environment variables to avoid passing them on the command line:
+
+```bash
+export PDM_PUBLISH_USERNAME=__token__
+export PDM_PUBLISH_PASSWORD=pypi-AgEIcHlwaS5vcmc...
+pdm publish
+```
+
+PDM also supports storing credentials in the system keyring. If keyring is available and credentials have been saved previously, PDM will use them automatically.
+
+## Publishing to a different repository
+
+Use `--repository` to publish to a repository other than PyPI. You can pass either a named repository (configured in PDM's config) or a direct upload URL:
+
+```bash
+# By name (must be configured)
+pdm publish --repository testpypi
+
+# By URL
+pdm publish --repository https://test.pypi.org/legacy/
+```
+
+The `testpypi` name is a built-in alias for the TestPyPI upload URL.
+
+## Trusted publishers (OIDC)
+
+Trusted publishers let you publish without exposing API tokens. PyPI supports OIDC-based authentication from major CI platforms. PDM handles the token exchange automatically when running in a supported environment.
+
+Follow [PyPI's guide to adding a trusted publisher](https://docs.pypi.org/trusted-publishers/adding-a-publisher/) to configure your project, then use one of the following CI configurations:
+
+<Tabs>
+  <Tab title="GitHub Actions">
+    ```yaml
+    on:
+      release:
+        types: [published]
+
+    jobs:
+      pypi-publish:
+        name: upload release to PyPI
+        runs-on: ubuntu-latest
+        permissions:
+          # Required for private repositories
+          contents: read
+          # Required for trusted publishing
+          id-token: write
+        steps:
+          - uses: actions/checkout@v4
+
+          - uses: pdm-project/setup-pdm@v4
+
+          - name: Publish package distributions to PyPI
+            run: pdm publish
+    ```
+
+    The `id-token: write` permission is what enables OIDC token exchange. No `PDM_PUBLISH_PASSWORD` secret is needed.
+  </Tab>
+  <Tab title="GitLab CI">
+    ```yaml
+    image: python:3.12-bookworm
+    before_script:
+      - pip install pdm
+
+    publish-package:
+      stage: release
+      environment: production
+      id_tokens:
+        PYPI_ID_TOKEN:
+          aud: "pypi"
+      script:
+        - pdm publish
+    ```
+
+    For TestPyPI, change `PYPI_ID_TOKEN` to `TESTPYPI_ID_TOKEN` and `aud` to `testpypi`.
+  </Tab>
+</Tabs>
+
+## Build formats
+
+By default, `pdm build` produces both a wheel and a source distribution:
+
+<CardGroup cols={2}>
+  <Card title="Wheel (.whl)" icon="circle">
+    A pre-built binary distribution. Faster to install — pip does not need to run the build backend. Preferred by most users.
+  </Card>
+  <Card title="Source distribution (.tar.gz)" icon="file-archive">
+    A source tarball. Required for platforms where a pre-built wheel is not available. PDM builds the wheel from the sdist by default to ensure what is published matches what users would build from source.
+  </Card>
+</CardGroup>
+
+To publish only one format:
+
+```bash
+# Wheel only
+pdm build --no-sdist
+
+# Sdist only
+pdm build --no-wheel
+```
+
+## Signing packages
+
+If your project requires PGP signatures, pass `--sign` when publishing:
+
+```bash
+pdm publish --sign
+```
+
+To sign with a specific GPG identity:
+
+```bash
+pdm publish --sign --identity you@example.com
+```
+
+## Lifecycle hooks
+
+`pdm publish` and `pdm build` participate in PDM's hook system. You can run custom scripts at each stage:
+
+```toml
+[tool.pdm.scripts]
+pre_build = "python scripts/generate_version.py"
+post_build = "echo 'Artifacts written to dist/'"
+pre_publish = "python scripts/verify_changelog.py"
+post_publish = "echo 'Package published successfully'"
+```
+
+To skip hooks during a publish:
+
+```bash
+pdm publish --skip=:all
+```
+
+See the [lifecycle hooks](/usage/hooks) page for full details on available signals.

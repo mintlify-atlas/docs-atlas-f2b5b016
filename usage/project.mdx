@@ -1,0 +1,232 @@
+---
+title: "Project management"
+description: "Create new projects, choose a Python interpreter, and configure your pyproject.toml"
+---
+
+## Create a new project
+
+Use `pdm new` to scaffold a new project with a `pyproject.toml`:
+
+```bash
+pdm new my-project
+```
+
+PDM will ask you a series of questions to generate the project file. For template-based projects and additional options, see the [template documentation](/usage/template).
+
+## Initialize an existing project
+
+If you already have a project directory without a `pyproject.toml`, run `pdm init` from inside it:
+
+```bash
+cd my-project
+pdm init
+```
+
+PDM can also auto-detect and import existing configuration files from other package managers during `pdm init` or `pdm install`. Supported formats include:
+
+1. Pipenv's `Pipfile`
+2. Poetry's section in `pyproject.toml`
+3. Flit's section in `pyproject.toml`
+4. `requirements.txt` (pip format)
+5. setuptools `setup.py`
+
+<Info>
+Converting a `setup.py` will execute the file with the project interpreter. Make sure `setuptools` is installed and the file is trusted.
+</Info>
+
+## Choose a Python interpreter
+
+When you first run `pdm init` or `pdm install`, PDM will ask you to select a Python interpreter from those installed on your machine. The chosen path is saved to `.pdm-python` and used by all subsequent commands.
+
+You can change the interpreter at any time:
+
+```bash
+pdm use
+```
+
+Or point to a specific interpreter directly:
+
+```bash
+pdm use /path/to/python
+```
+
+**Alternative ways to specify the interpreter:**
+
+- Set the `PDM_PYTHON` environment variable. When set, the path in `.pdm-python` is ignored.
+- Create a `.python-version` file in the project root containing a version string such as `3.11`.
+- Set the `PDM_PYTHON_VERSION` environment variable to a version string.
+
+<Warning>
+If you reuse an environment created by another tool (such as conda), PDM will remove dependencies not listed in `pyproject.toml` or `pdm.lock` when running `pdm sync --clean` or `pdm remove`. Avoid sharing environments across multiple projects.
+</Warning>
+
+## Install Python interpreters with PDM
+
+PDM can install Python interpreters directly from [@indygreg's python-build-standalone](https://github.com/indygreg/python-build-standalone).
+
+<Steps>
+  <Step title="List available versions">
+    ```bash
+    pdm python install --list
+    ```
+  </Step>
+  <Step title="Install a specific version">
+    ```bash
+    pdm python install 3.9.8
+    ```
+
+    Install a free-threaded interpreter:
+
+    ```bash
+    pdm python install 3.13t
+    ```
+
+    Installers go to the location set by `python.install_root` in PDM's configuration.
+  </Step>
+  <Step title="Install based on requires-python">
+    If you omit the version, PDM selects the best match for your platform based on the `requires-python` field in `pyproject.toml`. The default strategy installs the highest available CPython version:
+
+    ```bash
+    pdm python install
+    ```
+
+    To install the minimum compatible version instead:
+
+    ```bash
+    pdm python install --min
+    ```
+
+    This strategy also applies to `pdm use`, making it useful for unattended CI/CD setup.
+  </Step>
+  <Step title="List and remove installed interpreters">
+    ```bash
+    # List installed interpreters
+    pdm python list
+
+    # Remove an installed interpreter
+    pdm python remove 3.9.8
+    ```
+  </Step>
+</Steps>
+
+<Tip>
+PDM uses the same source as [Rye](https://rye-up.com) for Python builds. You can share installations by pointing `python.install_root` to Rye's directory:
+
+```bash
+pdm config python.install_root ~/.rye/py
+```
+
+After that, both `rye toolchain` and `pdm python` manage the same set of interpreters.
+</Tip>
+
+## Virtual environment or PEP 582
+
+After selecting an interpreter, PDM will ask whether you want to create a virtual environment. PDM supports two modes:
+
+<CardGroup cols={2}>
+  <Card title="Virtual environment (default)" icon="cube" href="/usage/venv">
+    PDM creates a `.venv` in the project root. This is the recommended mode with broad IDE and tooling support.
+  </Card>
+  <Card title="PEP 582 (__pypackages__)" icon="folder" href="/usage/venv">
+    Dependencies are installed into `__pypackages__` in the project root. No activation required, but less universal support.
+  </Card>
+</CardGroup>
+
+If the selected interpreter is already inside a virtualenv, PDM will use that environment directly.
+
+## Library or application
+
+PDM distinguishes between two project types:
+
+**Library** — A package intended to be installed by other projects or published to PyPI. PDM adds `name`, `version`, and a `[build-system]` table to `pyproject.toml`. A library project is installed into the environment when you run `pdm install` or `pdm sync` (unless `--no-self` is specified).
+
+**Application** — Software that runs directly and is deployed, not distributed as a package. No build backend is required.
+
+To explicitly declare a project as a library, set the following in `pyproject.toml`:
+
+```toml
+[tool.pdm]
+distribution = true
+```
+
+## Specify `requires-python`
+
+The `requires-python` field determines which Python versions your project supports and directly affects how dependencies are resolved. Each dependency's `requires-python` range must fully cover your project's range.
+
+For example, if your project sets `requires-python = ">=3.9"` but a dependency only supports `>=3.7,<3.11`, resolution fails because the dependency doesn't support Python 3.11+:
+
+```
+Unable to find a resolution because the following dependencies don't work
+on all Python versions defined by the project's `requires-python`
+```
+
+To fix this, narrow your project's range, for example `>=3.9,<3.11`.
+
+**Common `requires-python` patterns:**
+
+| Value | Meaning |
+|---|---|
+| `>=3.7` | Python 3.7 and above |
+| `>=3.7,<3.11` | Python 3.7, 3.8, 3.9, and 3.10 |
+| `>=3.6,!=3.8.*,!=3.9.*` | Python 3.6+, excluding 3.8 and 3.9 |
+
+## Working with older Python versions
+
+PDM itself requires Python 3.9+, but your project can target lower versions. If your project is a library that needs to be built or published, the build backend must support the lowest Python version you need.
+
+| Backend | Supported Python | PEP 621 support |
+|---|---|---|
+| `pdm-backend` | `>=3.7` | Yes |
+| `setuptools>=60` | `>=3.7` | Experimental |
+| `hatchling` | `>=3.7` | Yes |
+| `flit-core>=3.4` | `>=3.6` | Yes |
+| `flit-core>=3.2,<3.4` | `>=3.4` | Yes |
+
+Applications without a `name` field in `pyproject.toml` have no build backend requirement and can use any Python version `>=2.7`.
+
+## Show the current environment
+
+Use `pdm info` to inspect which Python interpreter and environment mode the project is using:
+
+```bash
+$ pdm info
+PDM version:
+  2.0.0
+Python Interpreter:
+  /opt/homebrew/opt/python@3.9/bin/python3.9 (3.9)
+Project Root:
+  /Users/fming/wkspace/github/test-pdm
+Project Packages:
+  /Users/fming/wkspace/github/test-pdm/__pypackages__/3.9
+```
+
+- If **Project Packages** is `None`, virtualenv mode is active.
+- If **Project Packages** shows a path, PEP 582 mode is active.
+
+To show detailed environment information:
+
+```bash
+$ pdm info --env
+{
+  "implementation_name": "cpython",
+  "implementation_version": "3.9.0",
+  "os_name": "nt",
+  "platform_machine": "AMD64",
+  "platform_release": "10",
+  "platform_system": "Windows",
+  "platform_version": "10.0.18362",
+  "python_full_version": "3.9.0",
+  "platform_python_implementation": "CPython",
+  "python_version": "3.9",
+  "sys_platform": "win32"
+}
+```
+
+## Version control
+
+| File | Action |
+|---|---|
+| `pyproject.toml` | **Must** commit — contains build metadata and dependencies |
+| `pdm.lock` | **Should** commit — ensures all developers use the same dependency versions |
+| `pdm.toml` | **Should** commit — contains project-wide configuration worth sharing |
+| `.pdm-python` | **Do not** commit — stores the local Python path, specific to each machine |

@@ -1,0 +1,145 @@
+---
+title: "Project templates"
+description: "Bootstrap new projects from templates using pdm new, copier, or cookiecutter."
+---
+
+PDM supports initializing projects from templates, similar to `yarn create` or `npm create`. Templates let you start with a pre-configured project structure rather than setting everything up from scratch.
+
+## Creating a project from a template
+
+Pass a template name or URL as the first argument to `pdm new`, followed by the project name:
+
+```bash
+pdm new <template> <project-name>
+```
+
+PDM supports several ways to specify a template:
+
+<AccordionGroup>
+  <Accordion title="Short name (pdm-project organization)">
+    ```bash
+    pdm new django my-project
+    ```
+    PDM looks for a template at `https://github.com/pdm-project/template-django`. This is the shorthand for templates hosted under the `pdm-project` GitHub organization.
+  </Accordion>
+  <Accordion title="Full Git URL">
+    ```bash
+    pdm new https://github.com/frostming/pdm-template-django my-project
+    ```
+    Both HTTPS and SSH URLs are accepted. This form works for templates hosted anywhere.
+  </Accordion>
+  <Accordion title="Specific branch or tag">
+    ```bash
+    pdm new django@v2 my-project
+    ```
+    Append `@<ref>` to check out a specific branch, tag, or commit. Full Git URLs also support this syntax.
+  </Accordion>
+  <Accordion title="Local filesystem path">
+    ```bash
+    pdm new /path/to/template my-project
+    ```
+    Initialize from a template directory on your local machine.
+  </Accordion>
+  <Accordion title="Built-in minimal template">
+    ```bash
+    pdm new minimal my-project
+    ```
+    Uses the built-in `minimal` template, which generates only a `pyproject.toml` with no extra files.
+  </Accordion>
+</AccordionGroup>
+
+Running `pdm new my-project` without a template argument uses PDM's default built-in template.
+
+## Initializing in the current directory
+
+`pdm init` supports the same template argument and initializes the project in the **current directory** rather than creating a new one. Existing files with the same name are overwritten:
+
+```bash
+pdm init django
+```
+
+## How project name replacement works
+
+When PDM creates a project from a template, it automatically replaces the template's project name with your new project name throughout the files. The import name (derived by replacing non-alphanumeric characters with underscores and lowercasing) is also replaced.
+
+For example, if the template is called `foo-project` and you create `bar-project`, PDM makes these replacements:
+
+| What gets replaced | Where |
+|--------------------|-------|
+| `foo-project` → `bar-project` | All `.md` and `.rst` files |
+| `foo_project` → `bar_project` | All `.py` files |
+| `foo_project/` → `bar_project/` | Directory names |
+| `foo_project.py` → `bar_project.py` | File names |
+
+<Note>
+Name replacement only works when the import name is directly derivable from the project name. If the template uses a custom import name that doesn't follow this pattern, replacement will not occur.
+</Note>
+
+## Using copier
+
+[copier](https://github.com/copier-org/copier) is a more powerful project generator that supports interactive prompts, templating, and updates. Install it first:
+
+```bash
+pdm self add copier
+```
+
+Then use `--copier` with `pdm init`:
+
+```bash
+pdm init --copier gh:pawamoy/copier-pdm --UNSAFE
+```
+
+The `--UNSAFE` flag is required to allow copier to run tasks defined in the template. Check the template's documentation to understand what tasks it runs before using this flag.
+
+## Using cookiecutter
+
+[cookiecutter](https://github.com/cookiecutter/cookiecutter) is a widely-used project templating tool. Install it first:
+
+```bash
+pdm self add cookiecutter
+```
+
+Then use `--cookiecutter` with `pdm init`:
+
+```bash
+pdm init --cookiecutter gh:cjolowicz/cookiecutter-hypermodern-python
+```
+
+## copier vs cookiecutter
+
+<CardGroup cols={2}>
+  <Card title="copier" icon="copy">
+    Supports updating existing projects when the template changes. Uses Jinja2 templating with YAML configuration. Actively maintained with a focus on project lifecycle management.
+  </Card>
+  <Card title="cookiecutter" icon="cookie">
+    Widely adopted with a large ecosystem of community templates. Uses Jinja2 templating with JSON or YAML configuration. No built-in update support.
+  </Card>
+</CardGroup>
+
+## Contributing a template
+
+If you build a template you would like to share with the PDM community, you can request that it be transferred to the `pdm-project` GitHub organization. Once accepted, users can reference it by short name (for example, `pdm new your-template-name my-project`).
+
+To contribute:
+
+<Steps>
+  <Step title="Create a template repository">
+    The repository must contain a `pyproject.toml` with PEP 621-compliant metadata. No other special config files are required.
+  </Step>
+  <Step title="Request transfer">
+    In your repository's settings, find the **Transfer** option at the bottom of the **General** page and initiate a transfer request to the `pdm-project` organization.
+  </Step>
+  <Step title="Wait for review">
+    The organization administrators will review the request. If accepted, you will be added as a repository maintainer.
+  </Step>
+</Steps>
+
+## Template requirements
+
+A valid PDM template must:
+
+- Be a pyproject-based project (contain a `pyproject.toml`)
+- Have PEP 621-compliant metadata in `[project]`
+- Use a project name that maps cleanly to an import name (for automatic name replacement to work)
+
+No other special files or configuration are required.

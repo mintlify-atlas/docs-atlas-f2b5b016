@@ -1,0 +1,332 @@
+---
+title: "Lock file"
+description: "Understand and manage pdm.lock — PDM's source of truth for reproducible installs"
+---
+
+PDM installs packages exclusively from the lock file (`pdm.lock`). The lock file is the sole source of truth for which package versions are installed. It records:
+
+- All packages and their exact versions
+- File names and cryptographic hashes for each package
+- Optionally, static download URLs
+- Environment markers and dependency relationships for each package
+
+## Create or update the lock file
+
+Run `pdm lock` to create or overwrite the lock file:
+
+```bash
+pdm lock
+```
+
+`pdm lock` supports the same [update strategies](/usage/dependency#update-strategies) as `pdm add`. By default it uses `all`, resolving everything fresh.
+
+Reuse existing pinned versions where possible:
+
+```bash
+pdm lock --update-reuse
+```
+
+Reuse versions currently installed in the working set:
+
+```bash
+pdm lock --update-reuse-installed
+```
+
+The following commands also create or update `pdm.lock` automatically:
+
+- `pdm add` — resolves and locks new dependencies
+- `pdm install` — checks `pyproject.toml` for changes and updates the lock file if needed
+
+## Install from the lock file
+
+Three commands install packages using the lock file, each with slightly different behavior:
+
+| Command | What it does |
+|---|---|
+| `pdm sync` | Installs packages from the existing lock file without modifying it |
+| `pdm install` | Checks `pyproject.toml` for changes, updates the lock file if needed, then syncs |
+| `pdm update` | Updates the lock file, then syncs |
+
+### Clean up removed packages
+
+`pdm sync` accepts flags to remove packages that are no longer needed:
+
+```bash
+# Remove packages no longer in the lock file
+pdm sync --clean
+
+# Remove packages not in the groups selected by -G, -d, or --prod
+pdm sync --clean-unselected
+```
+
+<Note>
+`--clean-unselected` (also `--only-keep`) is identical to `--clean` unless you also pass `-G`, `-d`, or `--prod` to restrict which groups are selected.
+</Note>
+
+## Verify the lock file
+
+Check whether the lock file is up to date with `pyproject.toml`:
+
+```bash
+pdm lock --check
+```
+
+This exits with a non-zero code if the lock file is out of date, which is useful in CI pipelines. You can also run the same check during install:
+
+```bash
+pdm install --check
+```
+
+To refresh file hashes and the content hash without changing resolved versions:
+
+```bash
+pdm lock --refresh
+```
+
+## Lock file format
+
+PDM supports two lock file formats:
+
+<Tabs>
+  <Tab title="pdm (default)">
+    Default file name: `pdm.lock`. The PDM-native format with full support for all features.
+
+    ```bash
+    pdm config lock.format pdm
+    ```
+  </Tab>
+  <Tab title="pylock (PEP 751)">
+    Default file name: `pylock.toml`. An experimental standard format designed for interoperability across Python package managers, defined in [PEP 751](https://packaging.python.org/en/latest/specifications/pylock-toml/#pylock-toml-spec).
+
+    ```bash
+    pdm config lock.format pylock
+    ```
+
+    <Note>
+    PEP 751 support was added in PDM 2.25.0 and is currently experimental. It is planned to become the default in a future version.
+    </Note>
+  </Tab>
+</Tabs>
+
+## Use a different lock file
+
+By default PDM uses `pdm.lock` in the current directory. Specify an alternate lock file with `-L/--lockfile` or the `PDM_LOCKFILE` environment variable:
+
+```bash
+pdm install --lockfile my-lockfile.lock
+pdm lock --lockfile my-lockfile.lock
+```
+
+This is useful when you have conflicting dependencies across environments. For example, a project that uses a local in-development copy of `werkzeug` for development and the published release in production:
+
+```toml
+[project]
+requires-python = ">=3.7"
+dependencies = ["werkzeug"]
+
+[dependency-groups]
+dev = ["werkzeug @ file:///${PROJECT_ROOT}/dev/werkzeug"]
+```
+
+Lock each environment to its own file:
+
+```bash
+# Lock default + dev groups (local werkzeug), write to pdm.lock
+pdm lock
+
+# Lock default only (release werkzeug), write to pdm.prod.lock
+pdm lock --prod -L pdm.prod.lock
+```
+
+Check the `metadata.groups` field in a lockfile to see which groups it covers.
+
+## Freeze the lock file
+
+To prevent any writes to the lock file while still performing dependency resolution (for example, during `pdm add`), use `--frozen-lockfile`:
+
+```bash
+pdm add --frozen-lockfile flask
+```
+
+The lock file becomes read-only for that operation.
+
+## Lock strategies
+
+Pass one or more strategy flags with `-S/--strategy` to control locking behavior. Flags are saved in the lock file and reapplied on the next `pdm lock`. Combine multiple flags with commas or repeated `-S` options:
+
+```bash
+pdm lock -S cross_platform,static_urls
+pdm lock -S cross_platform -S static_urls
+```
+
+Disable a flag by prefixing it with `no_`:
+
+```bash
+pdm lock -S no_cross_platform
+```
+
+### Cross-platform
+
+By default, the lock file is cross-platform — it includes packages for all platforms and Python versions within `requires-python`. If a release is missing some platform wheels, this can result in an incorrect lock file. To restrict the lock file to the current platform only:
+
+```bash
+pdm lock --strategy no_cross_platform
+```
+
+<Warning>
+The `cross_platform` strategy flag is deprecated as of PDM 2.17.0. Use [lock targets](/usage/lock-targets) to lock for specific platforms or Python versions.
+</Warning>
+
+### Static URLs
+
+By default, PDM stores only filenames in the lock file to maximize reusability across package indexes. To store full static download URLs instead:
+
+```bash
+pdm lock --strategy static_urls
+```
+
+Disable with:
+
+```bash
+pdm lock --strategy no_static_urls
+```
+
+### Direct minimal versions
+
+When enabled, direct dependencies are resolved to their minimum allowed version rather than the latest. This is useful for testing compatibility across a version range:
+
+```bash
+pdm lock --strategy direct_minimal_versions
+```
+
+For example, `flask>=2.0` resolves to `flask==2.0.0` if no other constraints prevent it.
+
+<Note>
+Resolving to minimal versions can expose backwards-compatibility issues in transitive dependencies. For example, `flask==2.0.0` requires `werkzeug>=2.0`, but cannot actually work with `Werkzeug 3.0.0` released later.
+</Note>
+
+### Inherit metadata
+
+When enabled (the default since PDM 2.11.0), environment markers are inherited and merged from a package's ancestor nodes in the dependency tree and encoded directly in the lock file. This removes the need for an additional resolution step during installation, making installs faster.
+
+To disable:
+
+```bash
+pdm config strategy.inherit_metadata false
+```
+
+## Lock targets
+
+Lock for a specific Python version range, platform, or implementation:
+
+```bash
+# Lock for Python 3.11 and above
+pdm lock --python ">=3.11"
+
+# Lock for Linux only
+pdm lock --platform linux
+
+# Lock for PyPy
+pdm lock --implementation pypy
+
+# Append to an existing lock file instead of overwriting
+pdm lock --python ">=3.11" --append
+```
+
+See the [lock targets documentation](/usage/lock-targets) for the full list of available platform values.
+
+## Exclude packages newer than a date
+
+Exclude packages released after a given date to ensure a reproducible build:
+
+```bash
+# Exclude packages released after January 1, 2024
+pdm lock --exclude-newer 2024-01-01
+
+# Exclude packages released in the last 7 days
+pdm lock --exclude-newer 7d
+
+# Use an RFC 3339 timestamp
+pdm lock --exclude-newer 2024-01-01T00:00:00Z
+```
+
+Relative durations use the format `N{d|h|w}` (days, hours, or weeks).
+
+<Note>
+The package index must expose the `upload-time` field as specified in [PEP 700](https://peps.python.org/pep-0700/). Distributions without this field are treated as unavailable.
+</Note>
+
+## Control package format (binary vs source)
+
+Use environment variables to control whether binary distributions or source archives are used during locking and installation:
+
+```bash
+# Exclude binary distributions for werkzeug
+PDM_NO_BINARY=werkzeug pdm add flask
+
+# Lock only binary distributions for all packages
+PDM_ONLY_BINARY=:all: pdm lock
+
+# Install only source archives for all packages
+PDM_NO_BINARY=:all: pdm install
+
+# Prefer binary even if a newer sdist is available
+PDM_PREFER_BINARY=flask pdm install
+```
+
+You can also configure this persistently in `pyproject.toml`:
+
+```toml
+[tool.pdm.resolution]
+no-binary = "werkzeug,flask"
+only-binary = ":all:"
+prefer-binary = "flask"
+```
+
+Both list and string formats are accepted. Environment variables take precedence over `pyproject.toml` settings.
+
+## Allow prereleases
+
+To allow prerelease versions to be installed globally for the project:
+
+```toml
+[tool.pdm.resolution]
+allow-prereleases = true
+```
+
+## Troubleshoot lock failures
+
+If PDM cannot find a valid resolution, it will print the conflicting constraints:
+
+```
+🔒 Lock failed
+Unable to find a resolution for asgiref because of the following conflicts:
+    asgiref<3 (from project)
+    asgiref<4,>=3.2.10 (from <Candidate django 3.1.4 from https://pypi.org/simple/django/>)
+To fix this, you could loosen the dependency version constraints in pyproject.toml. If that is not possible,
+you could also override the resolved version in `[tool.pdm.resolution.overrides]` table.
+```
+
+Options to resolve the conflict:
+
+1. Widen or remove the constraint in `pyproject.toml`
+2. Use [dependency overrides](/usage/dependency#dependency-overrides) to force a specific version
+3. Exclude the conflicting package from the lock file entirely
+
+## Export to other formats
+
+Export the lock file to a `requirements.txt` file for use in CI or Docker builds:
+
+```bash
+pdm export -o requirements.txt
+```
+
+Export to PEP 751 `pylock.toml` format:
+
+```bash
+pdm export -f pylock -o pylock.toml
+```
+
+<Tip>
+You can run `pdm export` automatically using a [pre-commit hook](/usage/advanced#hooks-for-pre-commit) to keep an exported `requirements.txt` in sync with your lock file.
+</Tip>

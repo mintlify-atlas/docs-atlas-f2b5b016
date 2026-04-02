@@ -1,0 +1,427 @@
+---
+title: "Managing dependencies"
+description: "Add, remove, and update project dependencies using pdm add, pdm remove, and pdm update"
+---
+
+## Add dependencies
+
+Use `pdm add` followed by one or more package specifications. Package specifications follow [PEP 508](https://www.python.org/dev/peps/pep-0508/) syntax.
+
+```bash
+pdm add requests
+pdm add requests==2.25.1
+pdm add requests[socks]
+pdm add "flask>=1.0" flask-sqlalchemy
+```
+
+After running `pdm add`, PDM resolves all dependencies, updates `pyproject.toml`, and writes or updates `pdm.lock`.
+
+### Save version specifiers
+
+When you add a package without an explicit version constraint, PDM writes a version specifier based on the latest resolved version. Control this behavior with `--save-<strategy>` (assuming `2.21.0` is the latest version found):
+
+| Strategy | Saved specifier | Example |
+|---|---|---|
+| `minimum` (default) | Lower bound only | `>=2.21.0` |
+| `compatible` | Compatible release | `>=2.21.0,<3.0.0` |
+| `exact` | Pinned version | `==2.21.0` |
+| `wildcard` | No constraint | `*` |
+
+```bash
+pdm add --save-compatible requests
+pdm add --save-exact requests
+```
+
+### Prereleases
+
+Allow prerelease versions to be selected for the packages given in the command:
+
+```bash
+pdm add --pre flask
+```
+
+## Dependency groups
+
+PDM supports two kinds of additional dependency groups beyond the default `[project.dependencies]`.
+
+### Optional dependencies
+
+Optional dependencies go into `[project.optional-dependencies]` in `pyproject.toml` and are included in published package metadata. Use `-G/--group <name>` to target a group:
+
+```bash
+pdm add -G security cryptography
+```
+
+The resulting `pyproject.toml`:
+
+```toml
+[project.optional-dependencies]
+security = ["cryptography>=41.0.0"]
+```
+
+You can reference other optional groups within the same project — even before publishing:
+
+```toml
+[project]
+name = "foo"
+version = "0.1.0"
+
+[project.optional-dependencies]
+socks = ["pysocks"]
+jwt = ["pyjwt"]
+all = ["foo[socks,jwt]"]
+```
+
+### Development dependencies
+
+Development dependencies are stored in `[dependency-groups]` and are **not** included in published package metadata. Use `-d/--dev` together with `-G` to target a specific dev group:
+
+```bash
+pdm add -dG test pytest pytest-cov
+pdm add -dG lint flake8 black
+pdm add -dG doc mkdocs
+```
+
+Using only `-d` without `-G` places dependencies in the default `dev` group:
+
+```bash
+pdm add -d ipython
+```
+
+The resulting `pyproject.toml`:
+
+```toml
+[dependency-groups]
+lint = [
+    "flake8",
+    "black"
+]
+test = ["pytest", "pytest-cov"]
+doc = ["mkdocs"]
+```
+
+<Note>
+The same group name must not appear in both `[dependency-groups]` and `[project.optional-dependencies]`.
+</Note>
+
+## Local dependencies
+
+Add a local directory or wheel file as a dependency. The path must start with `./` or the package manager treats it as a named package:
+
+```bash
+pdm add ./sub-package
+pdm add ./first-1.0.0-py2.py3-none-any.whl
+```
+
+PDM writes the dependency using a URL format with a `${PROJECT_ROOT}` variable:
+
+```toml
+[project]
+dependencies = [
+    "sub-package @ file:///${PROJECT_ROOT}/sub-package",
+    "first @ file:///${PROJECT_ROOT}/first-1.0.0-py2.py3-none-any.whl",
+]
+```
+
+<Note>
+If you use `hatchling` as the build backend, the URL format is `{root:uri}/sub-package` instead of `file:///${PROJECT_ROOT}/sub-package`. Other backends may write absolute paths.
+</Note>
+
+## URL dependencies
+
+Install a package directly from a URL:
+
+```bash
+# Install a gzipped source archive
+pdm add "https://github.com/numpy/numpy/releases/download/v1.20.0/numpy-1.20.0.tar.gz"
+
+# Install a wheel from a URL
+pdm add "https://github.com/explosion/spacy-models/releases/download/en_core_web_trf-3.5.0/en_core_web_trf-3.5.0-py3-none-any.whl"
+```
+
+## VCS dependencies
+
+Install from a version control system using the format `{vcs}+{url}@{rev}`. Supported systems are `git`, `hg` (Mercurial), `svn` (Subversion), and `bzr` (Bazaar).
+
+```bash
+# Install from a git tag
+pdm add "git+https://github.com/pypa/pip.git@22.0"
+
+# Install with an explicit package name
+pdm add "pip @ git+https://github.com/pypa/pip.git@22.0"
+
+# Install from a subdirectory
+pdm add "git+https://github.com/owner/repo.git@master#egg=pkg&subdirectory=subpackage"
+
+# Use SSH instead of HTTPS
+pdm add "wheel @ git+ssh://git@github.com/pypa/wheel.git@main"
+
+# Short colon form for SSH
+pdm add "wheel @ git+git@github.com:pypa/wheel.git@main"
+```
+
+To include credentials without committing them, use environment variable substitution in `pyproject.toml`:
+
+```toml
+[project]
+dependencies = [
+  "mypackage @ git+http://${VCS_USER}:${VCS_PASSWD}@test.git.com/test/mypackage.git@master"
+]
+```
+
+## Editable dependencies
+
+Local directories and VCS dependencies can be installed in editable mode (equivalent to `pip install -e`). Editable installs are only permitted in development dependency groups:
+
+```bash
+# Editable local path
+pdm add -e ./sub-package --dev
+
+# Editable file URL
+pdm add -e file:///path/to/sub-package --dev
+
+# Editable VCS URL
+pdm add -e "git+https://github.com/pallets/click.git@main#egg=click" --dev
+```
+
+<Warning>
+Editable installs are only allowed in the `dev` dependency group. Attempting to add them to the default or optional dependency groups will raise a `PdmUsageError`.
+</Warning>
+
+## Remove dependencies
+
+Remove a dependency from `pyproject.toml` and uninstall it from the environment:
+
+```bash
+# Remove from default dependencies
+pdm remove requests
+
+# Remove from an optional group
+pdm remove -G web h11
+
+# Remove from a dev group
+pdm remove -dG test pytest-cov
+```
+
+To update `pyproject.toml` without uninstalling packages, pass `--no-sync`:
+
+```bash
+pdm remove --no-sync requests
+```
+
+## Update dependencies
+
+### Update all dependencies
+
+```bash
+pdm update
+```
+
+### Update specific packages
+
+```bash
+pdm update requests
+```
+
+### Update specific groups
+
+```bash
+pdm update -G security -G http
+# Or using a comma-separated list
+pdm update -G "security,http"
+```
+
+### Update a package within a specific group
+
+```bash
+pdm update -G security cryptography
+```
+
+### Update dev dependencies
+
+```bash
+# Update all default and dev dependencies
+pdm update -d
+
+# Update a specific package in a dev group
+pdm update -dG test pytest
+```
+
+### Update strategies
+
+Control how transitive (sub-) dependencies are handled with `--update-<strategy>`:
+
+| Strategy | Behavior |
+|---|---|
+| `reuse` (default) | Keep all locked versions except those named in the command |
+| `reuse-installed` | Reuse versions currently installed in the working set, including named packages |
+| `eager` | Try to lock newer versions of named packages and their recursive dependencies; keep all others |
+| `all` | Update all dependencies and sub-dependencies |
+
+### Ignore version specifiers
+
+Use `-u/--unconstrained` to update packages beyond what the version specifiers in `pyproject.toml` allow, similar to `yarn upgrade --latest`:
+
+```bash
+pdm update -u requests
+```
+
+PDM updates `pyproject.toml` with the new version specifier after resolving.
+
+## List installed packages
+
+### Table view
+
+```bash
+pdm list
+```
+
+### Dependency tree
+
+```bash
+$ pdm list --tree
+tempenv 0.0.0
+└── click 7.0 [ required: <7.0.0,>=6.7 ]
+black 19.10b0
+├── appdirs 1.4.3 [ required: Any ]
+├── attrs 19.3.0 [ required: >=18.1.0 ]
+├── click 7.0 [ required: >=6.5 ]
+├── pathspec 0.7.0 [ required: <1,>=0.6 ]
+├── regex 2020.2.20 [ required: Any ]
+├── toml 0.10.0 [ required: >=0.9.4 ]
+└── typed-ast 1.4.1 [ required: >=1.4.0 ]
+bump2version 1.0.0
+```
+
+### Reverse dependency tree
+
+Show why a specific package is required (similar to `pnpm why`):
+
+```bash
+$ pdm list --tree --reverse certifi
+certifi 2023.7.22
+└── requests 2.31.0 [ requires: >=2017.4.17 ]
+    └── cachecontrol[filecache] 0.13.1 [ requires: >=2.16.0 ]
+```
+
+### Filtering and output formats
+
+```bash
+# Filter by name pattern (use quotes to prevent shell expansion)
+pdm list 'flask-*' 'requests-*'
+
+# Include or exclude groups
+pdm list --include dev
+pdm list --exclude test
+
+# Custom fields
+pdm list --fields name,licenses,version
+
+# Export formats
+pdm list --csv
+pdm list --json
+pdm list --markdown
+pdm list --freeze
+
+# Show resolved packages from pdm.lock instead of installed packages
+pdm list --resolve
+```
+
+## Check for outdated packages
+
+```bash
+pdm outdated
+```
+
+Filter by name pattern:
+
+```bash
+pdm outdated 'requests*' 'flask*'
+```
+
+## Select groups to install
+
+You can install a subset of dependency groups using `-G`, `--prod`, and `--dev` flags with `pdm install`. Given this project structure:
+
+```toml
+[project]
+dependencies = ["requests"]
+
+[project.optional-dependencies]
+extra1 = ["flask"]
+extra2 = ["django"]
+
+[dependency-groups]
+dev1 = ["pytest"]
+dev2 = ["mkdocs"]
+```
+
+| Command | What it installs |
+|---|---|
+| `pdm install` | All groups in the lock file |
+| `pdm install -G extra1` | Production, all dev, and `extra1` optional |
+| `pdm install -G dev1` | Production and only `dev1` dev group |
+| `pdm install -G:all` | Production, all dev, and all optional groups |
+| `pdm install -G extra1 -G dev1` | Production, `extra1` optional, and only `dev1` dev |
+| `pdm install --prod` | Production dependencies only |
+| `pdm install --prod -G extra1` | Production and `extra1` optional |
+
+All dev dependencies are included by default unless `--prod` is passed or specific dev groups are requested with `-G`.
+
+Use `--no-self` to skip installing the root project itself, and `--no-editable` to install all packages as non-editable.
+
+## Dependency overrides
+
+When resolution fails because version constraints between packages conflict, you can override the resolved version for a specific package.
+
+### In pyproject.toml
+
+```toml
+[tool.pdm.resolution.overrides]
+asgiref = "3.2.10"        # exact version
+urllib3 = ">=1.26.2"      # version range
+pytz = "https://mypypi.org/packages/pytz-2020.9-py3-none-any.whl"  # URL
+```
+
+### Via a constraints file
+
+Create a `constraints.txt` file using requirements.txt syntax:
+
+```text
+requests==2.20.0
+django==1.11.8
+urllib3==1.23
+```
+
+Pass it to any command that performs resolution:
+
+```bash
+pdm lock --override constraints.txt
+pdm install --override constraints.txt
+pdm add --override constraints.txt flask
+```
+
+The `--override` option can be supplied multiple times and also accepts URLs:
+
+```bash
+pdm lock --override http://example.com/constraints.txt
+```
+
+## Manage the global project
+
+Use `-g/--global` to manage the global Python interpreter's dependencies instead of the current project. The global project is stored at `<CONFIG_ROOT>/global-project`.
+
+```bash
+pdm add -g httpie
+pdm list -g
+```
+
+<Warning>
+Be careful with `pdm remove` and `pdm sync --clean` when using the global project, as this can remove packages from your system Python.
+</Warning>
+
+If you want PDM to fall back to the global project automatically when no local project is found, set:
+
+```bash
+pdm config global_project.fallback true
+```

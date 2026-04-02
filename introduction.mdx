@@ -1,0 +1,77 @@
+---
+title: "Introduction"
+description: "A modern Python package and dependency manager supporting the latest PEP standards"
+---
+
+PDM is a modern Python package and dependency manager that supports the latest PEP standards — including PEP 517, PEP 621, and PEP 582. It provides fast dependency resolution, a flexible plugin system, and centralized installation cache similar to pnpm.
+
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Install PDM and set up your first project in minutes
+  </Card>
+  <Card title="Managing Dependencies" icon="box" href="/usage/dependency">
+    Add, remove, and update project dependencies
+  </Card>
+  <Card title="Scripts & Workflows" icon="play" href="/usage/scripts">
+    Run tasks and automate your development workflow
+  </Card>
+  <Card title="CLI Reference" icon="terminal" href="/reference/cli">
+    Complete reference for all PDM commands and flags
+  </Card>
+  <Card title="Configuration" icon="gear" href="/usage/config">
+    Customize PDM behavior for your project and environment
+  </Card>
+  <Card title="Plugin Development" icon="puzzle-piece" href="/dev/write-plugin">
+    Extend PDM with custom commands and behaviors
+  </Card>
+</CardGroup>
+
+## Feature highlights
+
+- **Fast dependency resolver** — Optimized for large binary distributions with minimal backtracking
+- **PEP 621 project metadata** — Standard `pyproject.toml` format for project configuration
+- **PEP 517 build backend** — Build wheels and source distributions with `pdm-backend`
+- **Virtual environment management** — Create and manage virtualenvs or use PEP 582 local packages
+- **Centralized installation cache** — Share installed packages across projects (like pnpm)
+- **Flexible plugin system** — Add new commands and modify behavior with community plugins
+- **User scripts** — Define and run project tasks like `npm run`
+- **Python installer** — Install and manage Python interpreters with `pdm python install`
+- **Cross-platform lock files** — Reproducible installs with hash-verified `pdm.lock`
+
+## Installation
+
+<Tabs>
+  <Tab title="Linux/macOS">
+    ```bash
+    curl -sSL https://pdm-project.org/install.sh | bash
+    ```
+  </Tab>
+  <Tab title="Windows">
+    ```powershell
+    powershell -ExecutionPolicy ByPass -c "irm https://pdm-project.org/install.ps1 | iex"
+    ```
+  </Tab>
+  <Tab title="pipx">
+    ```bash
+    pipx install pdm
+    ```
+  </Tab>
+  <Tab title="Homebrew">
+    ```bash
+    brew install pdm
+    ```
+  </Tab>
+  <Tab title="uv">
+    ```bash
+    uv tool install pdm
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+PDM requires Python 3.9 or higher. Your projects can still target lower Python versions.
+</Note>
+
+## PDM ecosystem
+
+Explore community plugins and resources in the [Awesome PDM](https://github.com/pdm-project/awesome-pdm) list.

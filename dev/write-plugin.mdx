@@ -1,0 +1,351 @@
+---
+title: 'Writing PDM plugins'
+description: 'Extend PDM with custom commands, configuration, and event hooks using the plugin system.'
+---
+
+PDM is designed to be a community-driven package manager. It ships with a full-featured plugin system that lets you extend its behavior without modifying core code.
+
+With plugins you can:
+
+- Add new CLI commands to PDM
+- Attach extra options to existing PDM commands
+- Register new configuration keys that users can manage with `pdm config`
+- Listen to lifecycle signals to react to resolution, installation, builds, and more
+
+<Note>
+The core PDM project focuses on dependency management and package publishing. Additional functionality belongs in standalone plugins released as independent PyPI packages. If a plugin proves useful enough, it may eventually be absorbed into PDM core.
+</Note>
+
+## Writing a new command
+
+PDM's CLI is structured around `BaseCommand` subclasses. Inheriting from it gives you a consistent interface for argument parsing and command execution.
+
+### Subclassing BaseCommand
+
+```python
+from pdm.cli.commands.base import BaseCommand
+
+class HelloCommand(BaseCommand):
+    """Say hello to the specified person.
+    If none is given, will read from "hello.name" config.
+    """
+
+    def add_arguments(self, parser):
+        parser.add_argument("-n", "--name", help="the person's name to whom you greet")
+
+    def handle(self, project, options):
+        if not options.name:
+            name = project.config["hello.name"]
+        else:
+            name = options.name
+        print(f"Hello, {name}")
+```
+
+The two methods you implement are:
+
+- **`add_arguments(parser)`** — receives an `argparse.ArgumentParser` and adds your command's arguments to it.
+- **`handle(project, options)`** — called when the user runs your command. Receives the current `pdm.project.Project` instance and the parsed `argparse.Namespace`.
+
+The class docstring becomes the help text shown in `pdm --help`.
+
+### Default options
+
+Every `BaseCommand` subclass automatically inherits three default options defined in `pdm.cli.options`:
+
+| Option | Flag | Description |
+|---|---|---|
+| `verbose_option` | `-v`/`-q` | Controls output verbosity |
+| `global_option` | `-g`/`--global` | Enables the global project |
+| `project_option` | `-p`/`--project` | Points to a different project root |
+
+These are loaded before `add_arguments()` is called. If you don't want them, override the `arguments` class attribute:
+
+```python
+class HelloCommand(BaseCommand):
+    # No default options
+    arguments = []
+```
+
+Or include only the options you want by listing them explicitly:
+
+```python
+from pdm.cli.options import verbose_option
+
+class HelloCommand(BaseCommand):
+    arguments = [verbose_option]
+```
+
+### Accessing project config
+
+Inside `handle()`, the `project` argument gives you access to the resolved project configuration through `project.config`:
+
+```python
+def handle(self, project, options):
+    name = project.config["hello.name"]
+    print(f"Hello, {name}")
+```
+
+## Registering the plugin
+
+A plugin is a callable that accepts a single argument — the PDM `Core` object. There are no restrictions on naming.
+
+```python
+from pdm.project.config import ConfigItem
+
+def hello_plugin(core):
+    core.register_command(HelloCommand, "hello")
+    core.add_config("hello.name", ConfigItem("The person's name", "John"))
+```
+
+<Steps>
+  <Step title="Register the command">
+    Call `core.register_command(command_class, name)`. The `name` argument is optional — if omitted, PDM uses the `name` class attribute on the command.
+  </Step>
+  <Step title="Register config items">
+    Call `core.add_config(key, ConfigItem(...))` for every configuration key your plugin reads.
+  </Step>
+  <Step title="Declare the entry point">
+    Tell Python packaging to expose your callable under the `pdm` entry point group (see below).
+  </Step>
+</Steps>
+
+## Adding config items
+
+`ConfigItem` lives in `pdm.project.config` and takes these positional arguments:
+
+| Position | Parameter | Description |
+|---|---|---|
+| 1 | `description` | Human-readable description shown by `pdm config` |
+| 2 | `default` | Default value when the key is not set |
+| 3 | `global_only` | If `True`, only settable in the home config (optional) |
+| 4 | `env_var` | Environment variable name that overrides the config value (optional) |
+
+```python
+from pdm.project.config import ConfigItem
+
+core.add_config(
+    "hello.name",
+    ConfigItem("The person's name", "John"),
+)
+```
+
+After registration, users can inspect and set the value normally:
+
+```bash
+pdm config get hello.name
+pdm config set hello.name Alice
+```
+
+## Adding options to existing commands
+
+To attach an extra flag to an existing command, retrieve it from `core.subparsers` and call `add_argument` on its parser. A common pattern is to look up the command by name in `core.subparsers._name_parser_map`:
+
+```python
+from pdm.cli.options import Option
+
+def my_plugin(core):
+    # Attach --extra-flag to the existing `install` command
+    install_parser = core.subparsers._name_parser_map.get("install")
+    if install_parser:
+        install_parser.add_argument(
+            "--extra-flag",
+            action="store_true",
+            help="Enable extra behavior",
+        )
+```
+
+<Warning>
+`_name_parser_map` is a private argparse attribute. Access it only when necessary, and test across PDM versions.
+</Warning>
+
+## Listening to signals
+
+PDM uses [blinker](https://blinker.readthedocs.io/) named signals for lifecycle events. Import them from `pdm.signals` and connect handler functions.
+
+### Available signals
+
+| Signal | When fired | Key arguments |
+|---|---|---|
+| `post_init` | After a project is initialized | `project` |
+| `pre_lock` | Before dependency locking | `project`, `requirements`, `dry_run` |
+| `post_lock` | After dependency locking | `project`, `resolution`, `dry_run` |
+| `pre_install` | Before package installation | `project`, `packages`, `dry_run` |
+| `post_install` | After package installation | `project`, `packages`, `dry_run` |
+| `pre_build` | Before building | `project`, `dest`, `config_settings` |
+| `post_build` | After building | `project`, `artifacts`, `config_settings` |
+| `pre_publish` | Before publishing | `project` |
+| `post_publish` | After publishing | `project` |
+| `pre_run` | Before any `pdm run` execution | `project`, `script`, `args` |
+| `post_run` | After any `pdm run` execution | `project`, `script`, `args` |
+| `pre_script` | Before a script hook | `project`, `script`, `args` |
+| `post_script` | After a script hook | `project`, `script`, `args` |
+| `post_use` | After `pdm use` switches Python | `project`, `python` |
+| `pre_invoke` | Before any command is invoked | `project`, `command`, `options` |
+
+### Connecting handlers
+
+<Tabs>
+  <Tab title="Function style">
+```python
+from pdm.signals import post_install
+
+def on_post_install(project, candidates, dry_run):
+    project.core.ui.echo("Packages installed successfully")
+
+post_install.connect(on_post_install)
+```
+  </Tab>
+  <Tab title="Decorator style">
+```python
+from pdm.signals import post_install
+
+@post_install.connect
+def on_post_install(project, candidates, dry_run):
+    project.core.ui.echo("Packages installed successfully")
+```
+  </Tab>
+</Tabs>
+
+Connect your handlers inside the plugin function so they are registered when PDM loads your plugin:
+
+```python
+from pdm.signals import post_init, post_install
+
+def my_plugin(core):
+    @post_init.connect
+    def on_post_init(project):
+        project.core.ui.echo("Project initialized")
+
+    @post_install.connect
+    def on_post_install(project, candidates, dry_run):
+        project.core.ui.echo("Project install succeeded")
+```
+
+## Complete example
+
+The following is a complete, working plugin that adds a `hello` command:
+
+<CodeGroup>
+
+```python my_plugin.py
+from pdm.cli.commands.base import BaseCommand
+from pdm.project.config import ConfigItem
+
+
+class HelloCommand(BaseCommand):
+    """Say hello to the specified person.
+    If none is given, will read from "hello.name" config.
+    """
+
+    def add_arguments(self, parser):
+        parser.add_argument("-n", "--name", help="the person's name to whom you greet")
+
+    def handle(self, project, options):
+        if not options.name:
+            name = project.config["hello.name"]
+        else:
+            name = options.name
+        print(f"Hello, {name}")
+
+
+def hello_plugin(core):
+    core.register_command(HelloCommand, "hello")
+    core.add_config("hello.name", ConfigItem("The person's name", "John"))
+```
+
+```toml pyproject.toml
+[project.entry-points.pdm]
+hello = "my_plugin:hello_plugin"
+```
+
+</CodeGroup>
+
+## Distributing your plugin
+
+PDM discovers plugins via Python entry points. Plugins registered under the `pdm` entry point group are loaded automatically when PDM starts.
+
+<Tabs>
+  <Tab title="PEP 621 (pyproject.toml)">
+```toml
+[project.entry-points.pdm]
+hello = "my_plugin:hello_plugin"
+```
+  </Tab>
+  <Tab title="setuptools (setup.py)">
+```python
+setup(
+    ...
+    entry_points={"pdm": ["hello = my_plugin:hello_plugin"]},
+    ...
+)
+```
+  </Tab>
+</Tabs>
+
+Once your package is published to PyPI, users install it with:
+
+```bash
+pdm self add pdm-hello
+```
+
+After installation, the new command appears immediately:
+
+```bash
+$ pdm hello Jack
+Hello, Jack
+```
+
+Manage installed plugins with `pdm self --help`.
+
+## Specifying plugins per project
+
+If a project requires specific plugins, declare them in `pyproject.toml` under `tool.pdm.plugins`. Contributors can install them with a single command.
+
+```toml
+[tool.pdm]
+plugins = [
+    "pdm-packer"
+]
+```
+
+```bash
+pdm install --plugins
+```
+
+PDM installs these into a project-local plugin library (`.pdm-plugins/`) that is automatically loaded in subsequent commands.
+
+### Local plugins in development
+
+During development, install your plugin in editable mode so changes take effect immediately without reinstalling:
+
+```toml
+[tool.pdm]
+plugins = [
+    "-e file:///${PROJECT_ROOT}"
+]
+```
+
+```bash
+pdm install --plugins
+```
+
+Any change to your plugin code is picked up the next time `pdm` runs from inside the project directory.
+
+## Testing your plugin
+
+PDM exposes pytest fixtures via the `pdm.pytest` module. Add `pdm[pytest]` as a test dependency and enable the fixtures in your `conftest.py`:
+
+```python
+# conftest.py — single plugin
+pytest_plugins = "pdm.pytest"
+
+# conftest.py — multiple plugins
+pytest_plugins = [
+    "pdm.pytest",
+    # other plugins...
+]
+```
+
+<Tip>
+See PDM's own [conftest.py](https://github.com/pdm-project/pdm/blob/main/tests/conftest.py) for real-world fixture usage examples.
+</Tip>

@@ -1,0 +1,289 @@
+---
+title: "Lifecycle hooks"
+description: "Understand PDM's lifecycle phases, available signals, and how to run custom logic at each stage."
+---
+
+PDM organizes project work into distinct lifecycle phases. Each phase emits signals that plugins can listen to, and developers can define scripts with matching names to run custom logic automatically.
+
+## Overview
+
+PDM's built-in commands are grouped into three lifecycle phases:
+
+<CardGroup cols={3}>
+  <Card title="Initialization" icon="play">
+    `pdm init` — run once to set up a new project
+  </Card>
+  <Card title="Dependencies" icon="box">
+    `pdm install`, `pdm lock`, `pdm add`, `pdm update`, `pdm remove`
+  </Card>
+  <Card title="Publication" icon="upload">
+    `pdm build`, `pdm publish`
+  </Card>
+</CardGroup>
+
+A special `pre_invoke` signal is emitted before **any** command runs, giving plugins a chance to modify the project or options before execution begins.
+
+## Initialization phase
+
+The initialization phase runs once per project via `pdm init`. After the project is set up, PDM emits the `post_init` signal.
+
+```
+pdm init
+  └── post_init
+```
+
+**Available signal:** `post_init`
+
+| Signal | Args | Description |
+|--------|------|-------------|
+| `post_init` | `project` | Emitted after `pdm init` completes |
+
+**Hook script:** Define `post_init` in `[tool.pdm.scripts]` to run setup tasks after initialization:
+
+```toml
+[tool.pdm.scripts]
+post_init = "cp .env.example .env"
+```
+
+## Dependencies management phase
+
+Dependency management includes locking, syncing, adding, removing, and updating packages. The commands trigger lock and install hooks.
+
+```
+pdm install
+  ├── pdm lock
+  │     ├── pre_lock
+  │     └── post_lock
+  └── pdm sync
+        ├── pre_install
+        └── post_install
+```
+
+**Available commands:**
+
+| Command | Description |
+|---------|-------------|
+| `pdm lock` | Compute a lock file from requirements |
+| `pdm sync` | Synchronize packages from the lock file |
+| `pdm install` | Run `lock` if needed, then `sync` |
+| `pdm add` | Add a dependency, re-lock, then sync |
+| `pdm remove` | Remove a dependency, re-lock, then sync |
+| `pdm update` | Re-lock from latest versions, then sync |
+
+**Available signals:**
+
+| Signal | Args | Description |
+|--------|------|-------------|
+| `pre_lock` | `project`, `requirements`, `dry_run` | Emitted before dependency resolution |
+| `post_lock` | `project`, `resolution`, `dry_run` | Emitted after dependency resolution |
+| `pre_install` | `project`, `packages`, `dry_run` | Emitted before packages are installed |
+| `post_install` | `project`, `packages`, `dry_run` | Emitted after packages are installed |
+
+**Hook scripts:** Define any of these in `[tool.pdm.scripts]` to run custom logic at each stage:
+
+```toml
+[tool.pdm.scripts]
+post_install = "python scripts/post_install_setup.py"
+pre_lock = "echo 'Computing dependencies...'"
+```
+
+### Switching Python version
+
+`pdm use` is a special case in dependency management. It switches the active Python interpreter and emits the `post_use` signal with the new interpreter info:
+
+```
+pdm use
+  └── post_use
+```
+
+| Signal | Args | Description |
+|--------|------|-------------|
+| `post_use` | `project`, `python` | Emitted after switching to a new Python version |
+
+## Publication phase
+
+The publication phase covers building distributions and uploading them to a package index.
+
+```
+pdm publish
+  ├── pre_publish
+  ├── pdm build
+  │     ├── pre_build
+  │     └── post_build
+  ├── upload
+  └── post_publish
+```
+
+**Available signals:**
+
+| Signal | Args | Description |
+|--------|------|-------------|
+| `pre_publish` | `project` | Emitted before the publish process begins |
+| `post_publish` | `project` | Emitted after publishing completes |
+| `pre_build` | `project`, `dest`, `config_settings` | Emitted before building distributions |
+| `post_build` | `project`, `artifacts`, `config_settings` | Emitted after distributions are built |
+
+**Hook scripts:**
+
+```toml
+[tool.pdm.scripts]
+pre_publish = "python scripts/check_changelog.py"
+post_build = "echo 'Artifacts ready in dist/'"
+```
+
+<Note>Execution stops at the first failure, including hook scripts.</Note>
+
+## User script hooks
+
+Every user-defined script in `[tool.pdm.scripts]` participates in its own mini-lifecycle. When you run a script, PDM also emits run-level and script-level signals.
+
+**For a single script execution (`pdm run test`):**
+
+```
+pdm run test
+  ├── pre_run (signal)
+  └── test task
+  │     ├── pre_script (signal)
+  │     ├── pre_test (script)
+  │     ├── test (script)
+  │     ├── post_test (script)
+  │     └── post_script (signal)
+  └── post_run (signal)
+```
+
+**For a composite script execution (`pdm run composite`):**
+
+```
+pdm run composite
+  ├── pre_run (signal)
+  └── composite task
+  │     ├── pre_script (signal)
+  │     ├── pre_composite (script)
+  │     └── test task (called by composite)
+  │     │     ├── pre_script (signal)
+  │     │     ├── pre_test (script)
+  │     │     ├── test (script)
+  │     │     ├── post_test (script)
+  │     │     └── post_script (signal)
+  │     ├── post_composite (script)
+  │     └── post_script (signal)
+  └── post_run (signal)
+```
+
+**Run and script signals:**
+
+| Signal | Args | Description |
+|--------|------|-------------|
+| `pre_run` | `project`, `script`, `args` | Emitted once before a `pdm run` invocation |
+| `post_run` | `project`, `script`, `args` | Emitted once after a `pdm run` invocation |
+| `pre_script` | `project`, `script`, `args` | Emitted before each individual script task |
+| `post_script` | `project`, `script`, `args` | Emitted after each individual script task |
+
+**Available hook scripts:**
+
+| Script name | When it runs |
+|-------------|--------------|
+| `post_init` | After `pdm init` |
+| `pre_install` | Before installing packages |
+| `post_install` | After packages are installed |
+| `pre_lock` | Before dependency resolution |
+| `post_lock` | After dependency resolution |
+| `pre_build` | Before building distributions |
+| `post_build` | After distributions are built |
+| `pre_publish` | Before publishing |
+| `post_publish` | After publishing |
+| `pre_script` | Before any script runs |
+| `post_script` | After any script runs |
+| `pre_run` | Once before a `pdm run` invocation |
+| `post_run` | Once after a `pdm run` invocation |
+
+Example configuration using multiple hooks:
+
+```toml
+[tool.pdm.scripts]
+pre_install = "echo 'Installing dependencies...'"
+post_install = "python scripts/setup_dev.py"
+pre_lock = "echo 'Resolving dependencies...'"
+post_lock = "echo 'Lock file updated.'"
+pre_test = "echo 'Setting up test environment'"
+test = "pytest tests/"
+post_test = "echo 'Tests complete'"
+```
+
+## Listening to signals in plugins
+
+Plugins can connect handlers to any PDM signal using the [blinker](https://blinker.readthedocs.io/) signal API:
+
+```python
+from pdm.signals import post_init, post_install
+
+def on_post_init(project, **kwargs):
+    project.core.ui.echo("Project initialized")
+
+# Connect using a function call
+post_init.connect(on_post_init)
+
+# Or use the decorator form
+@post_install.connect
+def on_post_install(project, candidates, dry_run, **kwargs):
+    project.core.ui.echo("Packages installed successfully")
+```
+
+You can also import the full namespace and reference signals by name:
+
+```python
+from pdm.signals import pdm_signals
+
+signal = pdm_signals.signal("post_install")
+signal.connect(my_handler)
+```
+
+The `pre_invoke` signal fires before any PDM command runs, making it useful for global configuration or environment validation:
+
+```python
+from pdm.signals import pdm_signals
+
+@pdm_signals.signal("pre_invoke").connect
+def on_pre_invoke(project, command, options, **kwargs):
+    if command == "publish":
+        # Verify credentials are available before publishing
+        ...
+```
+
+## Skipping hooks
+
+Use the `--skip` option to bypass specific hooks or pre/post scripts in any command:
+
+```bash
+# Skip all hooks and pre/post scripts
+pdm install --skip=:all
+
+# Skip all pre_* hooks
+pdm run --skip=:pre my-task
+
+# Skip all post_* hooks
+pdm run --skip=:post my-task
+
+# Skip specific tasks by name
+pdm run --skip pre_task1,post_task2 my-composite
+```
+
+You can also set `PDM_SKIP_HOOKS` as an environment variable with a comma-separated list of hooks to skip. The `--skip` flag overrides it when both are present.
+
+**Example: running a composite task with selective skipping**
+
+Given this configuration:
+
+```toml
+[tool.pdm.scripts]
+pre_script = ""
+post_script = ""
+pre_test = ""
+post_test = ""
+test = "pytest"
+pre_composite = ""
+post_composite = ""
+composite = {composite = ["test"]}
+```
+
+Running `pdm run --skip=:pre,post_test composite` would skip all `pre_*` scripts and the `post_test` script, while still running `test`, `post_composite`, and `post_script`.

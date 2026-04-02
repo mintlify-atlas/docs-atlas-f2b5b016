@@ -1,0 +1,560 @@
+---
+title: PEP 621 metadata reference
+description: Complete reference for project metadata fields in pyproject.toml as used by PDM, including PEP 621, PEP 735, and PDM-specific extensions.
+---
+
+PDM stores project metadata in `pyproject.toml` following [PEP 621](https://peps.python.org/pep-0621/), [PEP 631](https://peps.python.org/pep-0631/), and [PEP 639](https://peps.python.org/pep-0639/). Fields in this document belong to the `[project]` table unless stated otherwise.
+
+---
+
+## `[project]` table
+
+### `name`
+
+**Required.** The distribution name of the package. Must follow [PEP 426](https://peps.python.org/pep-0426/) naming rules.
+
+```toml
+[project]
+name = "my-package"
+```
+
+### `version`
+
+The version of the package. Required unless listed under `dynamic`.
+
+<Tabs>
+  <Tab title="Static">
+    ```toml
+    [project]
+    version = "1.2.3"
+    ```
+  </Tab>
+  <Tab title="Dynamic (from file)">
+    ```toml
+    [project]
+    dynamic = ["version"]
+
+    [tool.pdm]
+    version = { source = "file", path = "mypackage/__version__.py" }
+    ```
+
+    PDM looks for the pattern `__version__ = "{version}"` in the specified file.
+  </Tab>
+  <Tab title="Dynamic (scm)">
+    ```toml
+    [project]
+    dynamic = ["version"]
+
+    [tool.pdm.version]
+    source = "scm"
+    ```
+
+    Reads the version from the latest git tag. Requires `pdm-backend`.
+  </Tab>
+</Tabs>
+
+### `description`
+
+A one-line summary of the package. Multi-line TOML strings are collapsed to a single line.
+
+```toml
+[project]
+description = "A fast, modern Python package manager."
+```
+
+For long descriptions, use TOML's line-ending escape:
+
+```toml
+[project]
+description = """\
+    Lorem ipsum dolor sit amet, consectetur adipiscing elit, \
+    sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.\
+"""
+```
+
+### `readme`
+
+Path to the readme file, or an inline table with `content-type`.
+
+```toml
+[project]
+readme = "README.md"
+```
+
+```toml
+[project]
+readme = { file = "README.rst", content-type = "text/x-rst" }
+```
+
+### `requires-python`
+
+The minimum Python version required by this project. Uses PEP 440 version specifiers.
+
+```toml
+[project]
+requires-python = ">=3.9"
+```
+
+<Note>
+PDM cannot automatically update the `classifiers` field. If you publish to PyPI, add the relevant trove classifiers manually.
+</Note>
+
+```toml
+[project]
+requires-python = ">=3.9"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+]
+```
+
+### `license`
+
+The project's license. Accepts a SPDX expression or a file reference.
+
+```toml
+[project]
+license = { text = "MIT" }
+```
+
+```toml
+[project]
+license = { file = "LICENSE" }
+```
+
+Add the corresponding trove classifier manually when publishing to PyPI:
+
+```toml
+[project]
+license = { text = "MIT" }
+classifiers = ["License :: OSI Approved :: MIT License"]
+```
+
+### `authors` / `maintainers`
+
+A list of inline tables with `name` and/or `email` keys.
+
+```toml
+[project]
+authors = [
+    { name = "Jane Smith", email = "jane@example.com" },
+    { name = "John Doe" },
+]
+maintainers = [
+    { email = "maintainers@example.com" },
+]
+```
+
+### `keywords`
+
+A list of strings used as search terms on PyPI.
+
+```toml
+[project]
+keywords = ["packaging", "dependency", "management"]
+```
+
+### `classifiers`
+
+A list of [trove classifiers](https://pypi.org/classifiers/) describing the project.
+
+```toml
+[project]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+]
+```
+
+### `urls`
+
+A table of labelled URLs. The keys are labels; the values are URLs.
+
+```toml
+[project.urls]
+Homepage = "https://example.com"
+Documentation = "https://docs.example.com"
+Repository = "https://github.com/example/mypackage"
+Changelog = "https://github.com/example/mypackage/blob/main/CHANGELOG.md"
+```
+
+### `dependencies`
+
+A list of [PEP 508](https://peps.python.org/pep-0508/) dependency requirement strings.
+
+```toml
+[project]
+dependencies = [
+    "requests",
+    "flask >= 1.1.0",
+    "pywin32; sys_platform == 'win32'",
+    "pip @ git+https://github.com/pypa/pip.git@20.3.1",
+]
+```
+
+#### Environment variable expansion
+
+With `pdm-backend`, use `${VAR}` syntax:
+
+```toml
+dependencies = [
+    "flask @ https://${USERNAME}:${PASSWORD}@artifacts.io/Flask-1.1.2.tar.gz"
+]
+```
+
+With `hatchling`, use `{env:VAR}` syntax:
+
+```toml
+dependencies = [
+    "flask @ https://{env:USERNAME}:{env:PASSWORD}@artifacts.io/Flask-1.1.2.tar.gz"
+]
+```
+
+#### Relative path dependencies
+
+When you run `pdm add ./my-package`, PDM saves the relative path using the appropriate backend syntax. The path is expanded at install/lock time.
+
+### `dynamic`
+
+Fields whose values are determined at build time rather than stored statically.
+
+```toml
+[project]
+dynamic = ["version", "description"]
+```
+
+---
+
+## `[project.optional-dependencies]`
+
+Extra dependency groups that users can opt into at install time. Equivalent to setuptools `extras_require`.
+
+```toml
+[project.optional-dependencies]
+socks = ["PySocks >= 1.5.6, != 1.5.7, < 2"]
+tests = [
+    "pytest >= 7.0",
+    "pytest-cov",
+]
+docs = [
+    "sphinx",
+    "sphinx-rtd-theme",
+]
+```
+
+Install an extra:
+
+```bash
+pdm install -G socks
+pdm install -G tests -G docs
+```
+
+---
+
+## `[project.scripts]`
+
+Entry points that create command-line scripts. Each key is the script name; the value is a `module:callable` string.
+
+```toml
+[project.scripts]
+mycli = "mycli.__main__:main"
+```
+
+---
+
+## `[project.gui-scripts]`
+
+Same as `[project.scripts]` but for GUI applications (maps to `gui_scripts` entry points).
+
+```toml
+[project.gui-scripts]
+mygui = "mygui.app:start"
+```
+
+---
+
+## `[project.entry-points]`
+
+Named entry point groups for plugin systems.
+
+```toml
+[project.entry-points.pytest11]
+my-plugin = "mypackage.plugin:pytest_plugin"
+
+[project.entry-points."flake8.extension"]
+my-ext = "mypackage.plugin:flake8_plugin"
+```
+
+---
+
+## `[dependency-groups]` (PEP 735)
+
+[PEP 735](https://peps.python.org/pep-0735/) dependency groups provide a standardised way to declare development dependencies without using `[project.optional-dependencies]`. PDM fully supports this table.
+
+```toml
+[dependency-groups]
+test = ["pytest>=7.0", "coverage"]
+lint = ["ruff", "mypy"]
+dev = [{ include-group = "test" }, { include-group = "lint" }]
+```
+
+Include a group during install:
+
+```bash
+pdm install -G test
+```
+
+<Note>
+Unlike `[project.optional-dependencies]`, `[dependency-groups]` groups are not published to PyPI as extras. They are intended for local development only.
+</Note>
+
+---
+
+## `[tool.pdm]`
+
+PDM-specific project settings.
+
+### `distribution`
+
+Whether the project is a library intended for distribution (as a wheel/sdist). Defaults to `false` for application projects.
+
+```toml
+[tool.pdm]
+distribution = true
+```
+
+### `version`
+
+Dynamic version configuration. Used when `version` is listed in `dynamic`.
+
+```toml
+[tool.pdm.version]
+source = "file"
+path = "mypackage/__version__.py"
+```
+
+```toml
+[tool.pdm.version]
+source = "scm"
+write_to = "mypackage/_version.py"
+write_template = "__version__ = '{}'"
+```
+
+### `plugins`
+
+A list of PDM plugins to install into the project's plugin environment (`.pdm-plugins/`). Run `pdm install --plugins` to install them.
+
+```toml
+[tool.pdm]
+plugins = ["pdm-multirun"]
+```
+
+---
+
+## `[tool.pdm.scripts]`
+
+Define scripts that can be run with `pdm run <name>`. Four task types are supported.
+
+### `cmd` — command with arguments
+
+A shell command split into a list (no shell interpolation).
+
+```toml
+[tool.pdm.scripts]
+lint = "ruff check src/"
+test = { cmd = "pytest tests/ -v" }
+test-with-args = { cmd = ["pytest", "tests/", "-v"] }
+```
+
+### `shell` — shell script
+
+Runs the value through the system shell. Supports shell features like pipes and redirects.
+
+```toml
+[tool.pdm.scripts]
+coverage = { shell = "pytest tests/ --cov=mypackage | tee coverage.txt" }
+```
+
+### `call` — Python callable
+
+Calls a Python function.
+
+```toml
+[tool.pdm.scripts]
+serve = { call = "mypackage.server:main" }
+```
+
+### `composite` — chain of scripts
+
+Runs a list of other scripts or commands in sequence.
+
+```toml
+[tool.pdm.scripts]
+all = { composite = ["lint", "test"] }
+```
+
+### Script options
+
+Each script definition supports these additional options:
+
+| Option | Description |
+|---|---|
+| `help` | Description shown in `pdm run --list` |
+| `env` | A table of extra environment variables |
+| `env_file` | Path to a `.env` file to load |
+| `working_dir` | Working directory relative to the project root |
+| `site_packages` | Load system site-packages when running the script |
+| `keep_going` | For `composite` scripts: continue on non-zero exit |
+
+```toml
+[tool.pdm.scripts]
+test = {
+    cmd = "pytest",
+    env = { PYTHONPATH = "src" },
+    env_file = ".env.test",
+    help = "Run the test suite"
+}
+
+[tool.pdm.scripts._]
+# Shared options applied to all scripts
+env = { DEBUG = "1" }
+```
+
+#### Argument interpolation
+
+Use `{args}` to pass extra CLI arguments to the script:
+
+```toml
+[tool.pdm.scripts]
+test = "pytest {args:tests/}"   # "tests/" is the default if no args given
+```
+
+```bash
+pdm run test -k "feature"   # runs: pytest -k "feature"
+pdm run test                 # runs: pytest tests/
+```
+
+---
+
+## `[tool.pdm.build]`
+
+Build configuration for `pdm-backend`. These fields have no effect with other backends.
+
+```toml
+[tool.pdm.build]
+package-dir = "src"
+includes = ["src/mypackage"]
+excludes = ["tests", "**/*.pyc"]
+source-includes = ["tests", "docs"]
+run-setuptools = false
+editable-backend = "editables"
+```
+
+| Field | Description |
+|---|---|
+| `package-dir` | Directory where packages are located (`src` layout) |
+| `includes` | Explicit list of files/patterns to include |
+| `excludes` | Patterns to exclude from the build |
+| `source-includes` | Extra paths included in sdists but not in wheels |
+| `run-setuptools` | Run `setup.py` during build (legacy) |
+| `editable-backend` | Backend for editable installs: `editables` or `path` |
+
+---
+
+## `[build-system]`
+
+PDM does not impose a build backend. Specify your chosen backend here. PDM supports any backend that reads PEP 621 metadata.
+
+<Tabs>
+  <Tab title="pdm-backend">
+    ```toml
+    [build-system]
+    requires = ["pdm-backend"]
+    build-backend = "pdm.backend"
+    ```
+  </Tab>
+  <Tab title="setuptools">
+    ```toml
+    [build-system]
+    requires = ["setuptools", "wheel"]
+    build-backend = "setuptools.build_meta"
+    ```
+  </Tab>
+  <Tab title="flit">
+    ```toml
+    [build-system]
+    requires = ["flit_core >=3.2,<4"]
+    build-backend = "flit_core.buildapi"
+    ```
+  </Tab>
+  <Tab title="hatchling">
+    ```toml
+    [build-system]
+    requires = ["hatchling"]
+    build-backend = "hatchling.build"
+    ```
+  </Tab>
+  <Tab title="maturin">
+    ```toml
+    [build-system]
+    requires = ["maturin>=1.4,<2.0"]
+    build-backend = "maturin"
+    ```
+  </Tab>
+</Tabs>
+
+<Warning>
+`poetry-core` is not supported because it does not read PEP 621 metadata.
+</Warning>
+
+---
+
+## Complete `pyproject.toml` example
+
+```toml
+[project]
+name = "my-library"
+version = "1.0.0"
+description = "A short description of my library."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [
+    { name = "Jane Smith", email = "jane@example.com" }
+]
+keywords = ["example", "library"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+]
+dependencies = [
+    "requests >= 2.28",
+    "rich >= 12.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "ruff", "mypy"]
+
+[project.urls]
+Homepage = "https://example.com"
+Repository = "https://github.com/example/my-library"
+
+[project.scripts]
+my-cli = "my_library.cli:main"
+
+[build-system]
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"
+
+[tool.pdm]
+distribution = true
+
+[tool.pdm.scripts]
+test = { cmd = "pytest", help = "Run tests" }
+lint = { composite = ["ruff check src/", "mypy src/"], help = "Lint and type-check" }
+```

@@ -1,0 +1,281 @@
+---
+title: "Virtual environments"
+description: "Create, activate, and manage virtual environments with PDM"
+---
+
+PDM uses virtual environments by default. When you run `pdm init` or `pdm install` for the first time in a new project, PDM creates a virtualenv at `<project_root>/.venv` and installs dependencies into it.
+
+Virtual environments are the recommended mode because they have broad support in the Python ecosystem and in IDEs. PEP 582 mode (`__pypackages__`) is an experimental alternative that installs dependencies into a local `__pypackages__` directory without needing activation.
+
+<Note>
+PDM defaults to virtualenv mode. To switch to PEP 582 mode, run `pdm config python.use_venv false`. When venv is disabled, PEP 582 mode is always used even if the selected interpreter is from a virtualenv.
+</Note>
+
+**Virtual environment mode is active when the project interpreter (stored in `.pdm-python`) is from a virtualenv.** You can confirm this with `pdm info` — if **Project Packages** shows `None`, a virtualenv is in use.
+
+## Virtualenv auto-creation
+
+When `pdm install` runs on a new project with no interpreter configured, PDM:
+
+1. Creates a virtualenv at `<project_root>/.venv`
+2. Installs all dependencies into it
+
+`pdm init` also offers to create a virtualenv during the interactive setup.
+
+### Choose a backend
+
+Three backends are supported for creating virtualenvs:
+
+| Backend | Notes |
+|---|---|
+| `virtualenv` (default) | Full-featured; supports older Python versions |
+| `venv` | Built into Python's standard library |
+| `conda` | For Anaconda/Miniconda users |
+
+Change the backend:
+
+```bash
+pdm config venv.backend virtualenv
+pdm config venv.backend venv
+pdm config venv.backend conda
+```
+
+## Create a virtualenv manually
+
+You can create additional virtualenvs for a project — for example, to test against multiple Python versions:
+
+```bash
+# Create a virtualenv using Python 3.9
+pdm venv create 3.9
+
+# Give it a custom name
+pdm venv create --name for-test 3.9
+
+# Use a specific backend
+pdm venv create --with venv 3.10
+
+# Include pip in the virtualenv
+pdm venv create --with-pip 3.9
+
+# Recreate if it already exists
+pdm venv create --force 3.9
+```
+
+Additional arguments to the backend can be passed after the Python version.
+
+## Virtualenv location
+
+- **Without `--name`**: PDM creates the virtualenv at `<project_root>/.venv`.
+- **With `--name`**: PDM creates the virtualenv under the directory set by `venv.location`, named `<project_name>-<path_hash>-<name>` to avoid collisions.
+
+To always create virtualenvs in `venv.location` (never in the project root):
+
+```bash
+pdm config venv.in_project false
+```
+
+## Auto-detection
+
+When no interpreter is saved in the project config, or when `PDM_IGNORE_SAVED_PYTHON` is set, PDM automatically looks for a virtualenv to use:
+
+- `venv`, `env`, or `.venv` directories in the project root
+- The currently activated virtualenv (unless `PDM_IGNORE_ACTIVE_VENV` is set)
+
+## Reuse an existing virtualenv
+
+Point PDM at a virtualenv you created with another tool:
+
+```bash
+pdm use -f /path/to/venv
+```
+
+## Switch between virtualenvs
+
+Switch to a named virtualenv as the active project environment:
+
+```bash
+# Switch to a named virtualenv
+pdm use --venv for-test
+
+# Switch to the in-project .venv
+pdm use --venv in-project
+```
+
+## List virtualenvs
+
+```bash
+$ pdm venv list
+Virtualenvs created with this project:
+
+-  3.8.6: C:\Users\Frost Ming\AppData\Local\pdm\pdm\venvs\test-project-8Sgn_62n-3.8.6
+*  for-test: C:\Users\Frost Ming\AppData\Local\pdm\pdm\venvs\test-project-8Sgn_62n-for-test
+-  3.9.1: C:\Users\Frost Ming\AppData\Local\pdm\pdm\venvs\test-project-8Sgn_62n-3.9.1
+```
+
+The `*` marks the currently active virtualenv.
+
+Show the path or Python interpreter for a specific virtualenv:
+
+```bash
+pdm venv --path for-test
+pdm venv --python for-test
+```
+
+## Remove a virtualenv
+
+```bash
+$ pdm venv remove for-test
+Virtualenvs created with this project:
+Will remove: C:\Users\Frost Ming\AppData\Local\pdm\pdm\venvs\test-project-8Sgn_62n-for-test, continue? [y/N]:y
+Removed C:\Users\Frost Ming\AppData\Local\pdm\pdm\venvs\test-project-8Sgn_62n-for-test
+```
+
+Pass `-y/--yes` to skip the confirmation prompt.
+
+## Activate a virtualenv
+
+PDM prints the activation command rather than spawning a subshell. Pipe it to `eval` (or the shell equivalent) to activate:
+
+<Tabs>
+  <Tab title="bash / zsh / csh">
+    ```bash
+    eval $(pdm venv activate for-test)
+    (test-project-for-test) $  # Virtualenv entered
+    ```
+  </Tab>
+  <Tab title="Fish">
+    ```fish
+    eval (pdm venv activate for-test)
+    ```
+  </Tab>
+  <Tab title="PowerShell">
+    ```powershell
+    Invoke-Expression (pdm venv activate for-test)
+    ```
+  </Tab>
+</Tabs>
+
+If the project interpreter is already a virtualenv Python, you can omit the name:
+
+```bash
+eval $(pdm venv activate)
+```
+
+<Note>
+`pdm venv activate` does not switch the interpreter used by PDM for the project. It only modifies the current shell session. To change the project interpreter, use `pdm use`.
+</Note>
+
+## Run commands without activating
+
+Use `--venv <name>` to run a command inside a specific virtualenv without activating it first:
+
+```bash
+# Run tests in the named virtualenv
+pdm run --venv for-test pytest
+
+# Sync packages into the named virtualenv
+pdm sync --venv for-test
+
+# List packages in the named virtualenv
+pdm list --venv for-test
+```
+
+Create the virtualenv with `pdm venv create --name <name>` before using this feature.
+
+## Shell integration (pdm shell equivalent)
+
+PDM does not provide a `pdm shell` command. Instead, you have two options:
+
+**Option 1:** Use `pdm run $SHELL` to spawn a subshell with the environment configured. Exit with `exit` or `Ctrl+D`.
+
+**Option 2:** Add a shell function to emulate `pdm shell`.
+
+<Tabs>
+  <Tab title="bash / zsh">
+    Add this to `~/.bashrc` or `~/.zshrc`:
+
+    ```bash
+    pdm() {
+      local command=$1
+
+      if [[ "$command" == "shell" ]]; then
+          eval $(pdm venv activate)
+      else
+          command pdm $@
+      fi
+    }
+    ```
+
+    Then run `pdm shell` to activate and `deactivate` to exit.
+  </Tab>
+  <Tab title="Fish">
+    Add this to `~/.config/fish/config.fish`:
+
+    ```fish
+    function pdm
+        set cmd $argv[1]
+
+        if test "$cmd" = "shell"
+            eval (pdm venv activate)
+        else
+            command pdm $argv
+        end
+    end
+    ```
+
+    Then run `pdm shell` to activate and `deactivate` to exit.
+  </Tab>
+</Tabs>
+
+## Customize the prompt
+
+When you activate a virtualenv, the shell prompt shows `{project_name}-{python_version}` by default:
+
+```bash
+$ eval $(pdm venv activate for-test)
+(test-project-3.10) $
+```
+
+Customize the format before creating the virtualenv using the `venv.prompt` config key or the `PDM_VENV_PROMPT` environment variable. Available variables are `{project_name}` and `{python_version}`:
+
+```bash
+$ PDM_VENV_PROMPT='{project_name}-py{python_version}' pdm venv create --name test-prompt
+$ eval $(pdm venv activate test-prompt)
+(test-project-py3.10) $
+```
+
+## Include pip in a virtualenv
+
+By default PDM does not include `pip` in virtualenvs, keeping environments isolated from anything outside your declared dependencies.
+
+To install `pip` in the current virtualenv on demand:
+
+```bash
+pdm run python -m ensurepip
+```
+
+To create a virtualenv with `pip` already included:
+
+```bash
+pdm venv create --with-pip 3.9
+```
+
+To always include `pip` in new virtualenvs:
+
+```bash
+pdm config venv.with_pip true
+```
+
+<Warning>
+Packages installed directly via `pip` inside the virtualenv are not checked for conflicts against your lock file dependencies.
+</Warning>
+
+## Disable virtualenv mode
+
+To opt out of virtualenv mode and use PEP 582 instead:
+
+```bash
+pdm config python.use_venv false
+```
+
+When this is set, PDM always uses `__pypackages__` — even if the selected interpreter is from a virtualenv.

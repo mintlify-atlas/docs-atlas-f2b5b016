@@ -1,0 +1,586 @@
+---
+title: Configuration reference
+description: Complete reference for all PDM configuration keys, their types, defaults, environment variables, and descriptions.
+---
+
+PDM configuration is stored in two files:
+
+- **Global config** (`~/.config/pdm/config.toml` on Linux/macOS, `%APPDATA%\pdm\config.toml` on Windows) — applies to all projects.
+- **Project config** (`pdm.toml` in the project root) — overrides the global config for that project only.
+
+Keys marked **global only** can only be set in the global config file.
+
+Use `pdm config` to inspect and modify configuration:
+
+```bash
+pdm config                          # list all keys and values
+pdm config python.use_venv          # get a single key
+pdm config python.use_venv false    # set a key globally
+pdm config --local python.use_venv false  # set a key for the current project
+pdm config --delete python.use_venv # reset a key to its default
+```
+
+Most keys can also be overridden with environment variables. The environment variable always wins over both config files.
+
+---
+
+## General
+
+### `cache_dir`
+
+<ParamField path="cache_dir" type="string" default="platform user cache dir">
+  The root directory for all PDM cache files. Defaults to the platform's user cache directory (e.g. `~/.cache/pdm` on Linux).
+
+  **Global only:** yes
+
+  **Env var:** `PDM_CACHE_DIR`
+</ParamField>
+
+```bash
+pdm config cache_dir ~/.cache/my-pdm
+```
+
+---
+
+### `log_dir`
+
+<ParamField path="log_dir" type="string" default="platform user log dir">
+  The root directory for PDM log files.
+
+  **Global only:** yes
+
+  **Env var:** `PDM_LOG_DIR`
+</ParamField>
+
+---
+
+### `check_update`
+
+<ParamField path="check_update" type="boolean" default="true">
+  Whether PDM should check PyPI for a newer version of itself after each command.
+
+  **Global only:** yes
+
+  **Env var:** `PDM_CHECK_UPDATE`
+</ParamField>
+
+```bash
+pdm config check_update false
+```
+
+---
+
+### `build_isolation`
+
+<ParamField path="build_isolation" type="boolean" default="true">
+  Isolate the build environment from the project environment. Disable only if you need build-time packages to be visible to the build backend.
+
+  **Env var:** `PDM_BUILD_ISOLATION`
+</ParamField>
+
+---
+
+### `request_timeout`
+
+<ParamField path="request_timeout" type="integer" default="15">
+  Network request timeout in seconds for all HTTP calls (index fetches, etc.).
+
+  **Global only:** yes
+
+  **Env var:** `PDM_REQUEST_TIMEOUT`
+</ParamField>
+
+```bash
+pdm config request_timeout 30
+```
+
+---
+
+### `use_uv`
+
+<ParamField path="use_uv" type="boolean" default="false">
+  Use [uv](https://docs.astral.sh/uv/) as the resolver and installer instead of PDM's built-in implementation. `uv` must be installed separately.
+
+  **Env var:** `PDM_USE_UV`
+</ParamField>
+
+```bash
+pdm config use_uv true
+```
+
+---
+
+## Lock file
+
+### `lock.format`
+
+<ParamField path="lock.format" type="string" default="pdm">
+  The format to use for the lock file. Accepted values:
+
+  - `pdm` — PDM's own `pdm.lock` format (default).
+  - `pylock` — [PEP 751](https://peps.python.org/pep-0751/) `pylock.toml` format.
+
+  **Env var:** `PDM_LOCK_FORMAT`
+</ParamField>
+
+```bash
+pdm config lock.format pylock
+```
+
+---
+
+## Global project
+
+### `global_project.fallback`
+
+<ParamField path="global_project.fallback" type="boolean" default="false">
+  Use the global project implicitly when no local `pyproject.toml` is found.
+
+  **Global only:** yes
+</ParamField>
+
+```bash
+pdm config global_project.fallback true
+```
+
+---
+
+### `global_project.fallback_verbose`
+
+<ParamField path="global_project.fallback_verbose" type="boolean" default="true">
+  Print a message when the global project is used implicitly due to `global_project.fallback`.
+
+  **Global only:** yes
+</ParamField>
+
+---
+
+### `global_project.path`
+
+<ParamField path="global_project.path" type="string" default="~/.config/pdm/global-project">
+  The path to the global project directory.
+
+  **Global only:** yes
+</ParamField>
+
+---
+
+### `global_project.user_site`
+
+<ParamField path="global_project.user_site" type="boolean" default="false">
+  Install packages into the user site-packages directory when using the global project.
+
+  **Global only:** yes
+</ParamField>
+
+---
+
+## Dependency strategy
+
+### `strategy.update`
+
+<ParamField path="strategy.update" type="string" default="reuse">
+  Default strategy for `pdm update`. Controls how existing pinned versions are treated.
+
+  - `reuse` — keep pinned versions where possible.
+  - `eager` — update packages and their sub-dependencies aggressively.
+  - `all` — resolve everything from scratch.
+</ParamField>
+
+```bash
+pdm config strategy.update eager
+```
+
+---
+
+### `strategy.save`
+
+<ParamField path="strategy.save" type="string" default="minimum">
+  How to write version specifiers when a package is added with `pdm add`.
+
+  - `minimum` — `>=x.y.z` (default).
+  - `compatible` — `~=x.y`.
+  - `exact` — `==x.y.z`.
+  - `wildcard` — `*` (no constraint).
+</ParamField>
+
+```bash
+pdm config strategy.save compatible
+```
+
+---
+
+### `strategy.resolve_max_rounds`
+
+<ParamField path="strategy.resolve_max_rounds" type="integer" default="10000">
+  Maximum number of rounds for the dependency resolver. Increase for very large projects with complex constraints.
+
+  **Env var:** `PDM_RESOLVE_MAX_ROUNDS`
+</ParamField>
+
+---
+
+### `strategy.inherit_metadata`
+
+<ParamField path="strategy.inherit_metadata" type="boolean" default="true">
+  Propagate group membership and environment markers from parent packages to their dependencies in the lock file. Improves install performance for large projects.
+</ParamField>
+
+---
+
+## Installation
+
+### `install.parallel`
+
+<ParamField path="install.parallel" type="boolean" default="true">
+  Perform package installation and uninstallation in parallel.
+
+  **Env var:** `PDM_INSTALL_PARALLEL`
+</ParamField>
+
+```bash
+pdm config install.parallel false
+```
+
+---
+
+### `install.cache`
+
+<ParamField path="install.cache" type="boolean" default="false">
+  Enable the package install cache. When enabled, PDM installs packages into a central cache and creates links (symlinks or hardlinks) into the environment, similar to pnpm's approach.
+</ParamField>
+
+```bash
+pdm config install.cache true
+```
+
+---
+
+### `install.cache_method`
+
+<ParamField path="install.cache_method" type="string" default="symlink">
+  How cached package files are linked into environments when `install.cache` is enabled.
+
+  - `symlink` — symbolic links (default).
+  - `hardlink` — hard links.
+</ParamField>
+
+```bash
+pdm config install.cache_method hardlink
+```
+
+---
+
+## Python interpreter
+
+### `python.use_venv`
+
+<ParamField path="python.use_venv" type="boolean" default="true">
+  Create and use a virtual environment for each project. When disabled, PDM uses PEP 582 `__pypackages__` mode.
+
+  **Env var:** `PDM_USE_VENV`
+</ParamField>
+
+```bash
+pdm config python.use_venv false    # enable PEP 582 mode
+```
+
+---
+
+### `python.use_pyenv`
+
+<ParamField path="python.use_pyenv" type="boolean" default="true">
+  Allow PDM to discover Python interpreters managed by pyenv.
+</ParamField>
+
+---
+
+### `python.use_python_version`
+
+<ParamField path="python.use_python_version" type="boolean" default="true">
+  Read the `.python-version` file next to `pyproject.toml` to determine which Python to use.
+
+  **Env var:** `PDM_USE_PYTHON_VERSION`
+</ParamField>
+
+---
+
+### `python.providers`
+
+<ParamField path="python.providers" type="list[string]" default="[]">
+  Ordered list of [findpython](https://findpython.fming.dev/) provider names used to discover Python interpreters. An empty list means all available providers are used.
+
+  Example value: `"venv,pyenv,asdf"`.
+</ParamField>
+
+```bash
+pdm config python.providers "venv,pyenv"
+```
+
+---
+
+### `python.install_root`
+
+<ParamField path="python.install_root" type="string" default="platform user data dir / python">
+  The directory where PDM stores Python interpreters installed via `pdm python install`.
+
+  **Global only:** yes
+</ParamField>
+
+---
+
+## PyPI / package index
+
+### `pypi.url`
+
+<ParamField path="pypi.url" type="string" default="https://pypi.org/simple">
+  The URL of the primary package index.
+
+  **Env var:** `PDM_PYPI_URL`
+</ParamField>
+
+```bash
+pdm config pypi.url https://mirrors.example.com/simple
+```
+
+---
+
+### `pypi.verify_ssl`
+
+<ParamField path="pypi.verify_ssl" type="boolean" default="true">
+  Verify the SSL certificate when querying the package index.
+
+  **Env var:** `PDM_PYPI_VERIFY_SSL`
+</ParamField>
+
+---
+
+### `pypi.username`
+
+<ParamField path="pypi.username" type="string">
+  Username for authenticating with the primary index.
+
+  **Env var:** `PDM_PYPI_USERNAME`
+</ParamField>
+
+---
+
+### `pypi.password`
+
+<ParamField path="pypi.password" type="string">
+  Password for authenticating with the primary index. Stored in the system keyring when available.
+
+  **Env var:** `PDM_PYPI_PASSWORD`
+</ParamField>
+
+---
+
+### `pypi.ca_certs`
+
+<ParamField path="pypi.ca_certs" type="string">
+  Path to a PEM-encoded Certificate Authority bundle for verifying the index server's TLS certificate.
+
+  **Global only:** yes
+</ParamField>
+
+---
+
+### `pypi.client_cert`
+
+<ParamField path="pypi.client_cert" type="string">
+  Path to a client certificate file (or combined cert/key file) for mutual TLS.
+
+  **Global only:** yes
+</ParamField>
+
+---
+
+### `pypi.client_key`
+
+<ParamField path="pypi.client_key" type="string">
+  Path to the client certificate's key file, if not combined with `pypi.client_cert`.
+
+  **Global only:** yes
+</ParamField>
+
+---
+
+### `pypi.ignore_stored_index`
+
+<ParamField path="pypi.ignore_stored_index" type="boolean" default="false">
+  Don't merge indexes stored in the global/project config with indexes listed in `pyproject.toml`. Only the sources declared in the project file will be used.
+
+  **Env var:** `PDM_IGNORE_STORED_INDEX`
+</ParamField>
+
+---
+
+### `pypi.json_api`
+
+<ParamField path="pypi.json_api" type="boolean" default="false">
+  Use PyPI's JSON API to fetch package metadata instead of the simple index. This can be faster for PyPI but may not work with private mirrors.
+
+  **Env var:** `PDM_PYPI_JSON_API`
+</ParamField>
+
+---
+
+## Virtualenv
+
+### `venv.location`
+
+<ParamField path="venv.location" type="string" default="platform user data dir / venvs">
+  Parent directory where PDM stores centrally-managed virtual environments (when `venv.in_project` is `false`).
+
+  **Global only:** yes
+</ParamField>
+
+---
+
+### `venv.backend`
+
+<ParamField path="venv.backend" type="string" default="virtualenv">
+  Default backend used to create virtual environments.
+
+  - `virtualenv` — uses the [virtualenv](https://virtualenv.pypa.io/) package.
+  - `venv` — uses Python's built-in `venv` module.
+  - `conda` — uses conda (requires conda to be installed).
+  - `uv` — uses uv (requires `use_uv = true`).
+
+  **Env var:** `PDM_VENV_BACKEND`
+</ParamField>
+
+```bash
+pdm config venv.backend venv
+```
+
+---
+
+### `venv.in_project`
+
+<ParamField path="venv.in_project" type="boolean" default="true">
+  Create the virtual environment inside the project root as `.venv`, rather than in the central `venv.location` directory.
+
+  **Env var:** `PDM_VENV_IN_PROJECT`
+</ParamField>
+
+```bash
+pdm config venv.in_project false   # use centralised storage instead
+```
+
+---
+
+### `venv.prompt`
+
+<ParamField path="venv.prompt" type="string" default="{project_name}-{python_version}">
+  Template string for the shell prompt shown when a virtualenv is active. Available variables: `project_name`, `python_version`.
+
+  **Env var:** `PDM_VENV_PROMPT`
+</ParamField>
+
+```bash
+pdm config venv.prompt "{project_name}"
+```
+
+---
+
+### `venv.with_pip`
+
+<ParamField path="venv.with_pip" type="boolean" default="false">
+  Install pip into newly created virtual environments.
+
+  **Env var:** `PDM_VENV_WITH_PIP`
+</ParamField>
+
+---
+
+## Scripts
+
+### `scripts.show_header`
+
+<ParamField path="scripts.show_header" type="boolean" default="false">
+  Print the script name and help text before executing it with `pdm run`.
+
+  **Env var:** `PDM_SCRIPTS_SHOW_HEADER`
+</ParamField>
+
+---
+
+## Named index sources
+
+In addition to the built-in `pypi.*` keys, you can configure additional package indexes using `pypi.<name>.*` in the project config or `pyproject.toml`:
+
+```toml
+# pyproject.toml
+[[tool.pdm.source]]
+name = "private"
+url = "https://private.example.com/simple"
+verify_ssl = true
+username = "user"
+```
+
+Or via CLI:
+
+```bash
+pdm config pypi.private.url "https://private.example.com/simple"
+pdm config pypi.private.username "user"
+pdm config pypi.private.password "secret"
+```
+
+---
+
+## Named publish repositories
+
+Configure upload targets for `pdm publish` using `repository.<name>.*`:
+
+```bash
+pdm config repository.company.url "https://nexus.example.com/repository/pypi-hosted/"
+pdm config repository.company.username "deployer"
+pdm config repository.company.password "secret"
+```
+
+Then publish to it:
+
+```bash
+pdm publish -r company
+```
+
+Built-in repository names: `pypi` (`https://upload.pypi.org/legacy/`) and `testpypi` (`https://test.pypi.org/legacy/`).
+
+---
+
+## Environment variable summary
+
+| Environment variable | Config key | Description |
+|---|---|---|
+| `PDM_CACHE_DIR` | `cache_dir` | Cache root directory |
+| `PDM_LOG_DIR` | `log_dir` | Log root directory |
+| `PDM_CHECK_UPDATE` | `check_update` | Check for PDM updates |
+| `PDM_BUILD_ISOLATION` | `build_isolation` | Isolate build environments |
+| `PDM_REQUEST_TIMEOUT` | `request_timeout` | HTTP request timeout (seconds) |
+| `PDM_USE_UV` | `use_uv` | Use uv for resolution |
+| `PDM_LOCK_FORMAT` | `lock.format` | Lock file format (`pdm`/`pylock`) |
+| `PDM_RESOLVE_MAX_ROUNDS` | `strategy.resolve_max_rounds` | Max resolver rounds |
+| `PDM_INSTALL_PARALLEL` | `install.parallel` | Parallel install |
+| `PDM_USE_VENV` | `python.use_venv` | Use virtual environments |
+| `PDM_USE_PYTHON_VERSION` | `python.use_python_version` | Read `.python-version` file |
+| `PDM_PYPI_URL` | `pypi.url` | Package index URL |
+| `PDM_PYPI_VERIFY_SSL` | `pypi.verify_ssl` | Verify index SSL |
+| `PDM_PYPI_USERNAME` | `pypi.username` | Index username |
+| `PDM_PYPI_PASSWORD` | `pypi.password` | Index password |
+| `PDM_IGNORE_STORED_INDEX` | `pypi.ignore_stored_index` | Ignore config-file indexes |
+| `PDM_PYPI_JSON_API` | `pypi.json_api` | Use PyPI JSON API |
+| `PDM_VENV_BACKEND` | `venv.backend` | Virtualenv backend |
+| `PDM_VENV_IN_PROJECT` | `venv.in_project` | Create `.venv` in project root |
+| `PDM_VENV_PROMPT` | `venv.prompt` | Venv shell prompt template |
+| `PDM_VENV_WITH_PIP` | `venv.with_pip` | Install pip in venv |
+| `PDM_SCRIPTS_SHOW_HEADER` | `scripts.show_header` | Print script header on run |
+| `PDM_CONFIG_FILE` | — | Path to an alternative global config file |
+| `PDM_PYTHON` | — | Override the Python interpreter path for the project |
+| `PDM_FROZEN_LOCKFILE` | — | Don't update the lock file (equivalent to `--frozen-lockfile`) |
+| `PDM_IGNORE_SAVED_PYTHON` | — | Ignore the `.pdm-python` saved path |
+| `PDM_IGNORE_ACTIVE_VENV` | — | Ignore `VIRTUAL_ENV` / `CONDA_PREFIX` when resolving Python |
+| `PDM_PUBLISH_REPO` | — | Default publish repository name or URL |
+| `PDM_PUBLISH_USERNAME` | — | Publish repository username |
+| `PDM_PUBLISH_PASSWORD` | — | Publish repository password |
+| `PDM_PUBLISH_CA_CERTS` | — | CA bundle for publish server verification |

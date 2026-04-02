@@ -1,0 +1,119 @@
+---
+title: "Using PDM with uv"
+description: "Use uv as PDM's resolver and installer backend for significantly faster dependency resolution and installation."
+---
+
+<Note>
+uv support is experimental and was added in PDM 2.19.0.
+</Note>
+
+PDM has experimental support for [uv](https://github.com/astral-sh/uv) as its resolver and installer backend. uv is written in Rust and provides significantly faster dependency resolution and package installation compared to PDM's default backend.
+
+## Enable uv
+
+<Steps>
+  <Step title="Install uv">
+    PDM detects the `uv` binary automatically. Install uv using the [official installation guide](https://docs.astral.sh/uv/getting-started/installation/) for your platform.
+  </Step>
+  <Step title="Enable uv in PDM">
+    Set the `use_uv` configuration key:
+
+    ```bash
+    pdm config use_uv true
+    ```
+
+    To enable it for a specific project only:
+
+    ```bash
+    pdm config --local use_uv true
+    ```
+
+    You can also set the `PDM_USE_UV` environment variable:
+
+    ```bash
+    export PDM_USE_UV=true
+    ```
+  </Step>
+</Steps>
+
+Once enabled, `pdm install`, `pdm add`, `pdm lock`, and other commands that invoke the resolver or installer will delegate to uv.
+
+## Reuse uv's Python installations
+
+uv can install Python interpreters independently. To avoid maintaining separate Python installations, point PDM's Python install root at uv's directory:
+
+```bash
+pdm config python.install_root $(uv python dir --color never)
+```
+
+This lets `pdm python install` and `pdm use` share the same Python interpreters as `uv python install`.
+
+## Performance benefits
+
+uv's Rust-based resolver and installer substantially reduces the time for:
+
+- Initial dependency resolution (`pdm lock`)
+- Fresh installs (`pdm install`)
+- Adding and updating packages (`pdm add`, `pdm update`)
+
+The performance advantage is most noticeable for projects with many dependencies or large transitive dependency trees.
+
+## Limitations
+
+<Warning>
+The uv backend has several limitations compared to PDM's default backend. Review these before enabling uv in production workflows.
+</Warning>
+
+<AccordionGroup>
+  <Accordion title="Cache management">
+    uv stores its cache files in uv's own cache directory. You must use `uv` commands to manage this cache — `pdm cache` commands do not apply when using the uv backend.
+  </Accordion>
+  <Accordion title="PEP 582 not supported">
+    The PEP 582 `__pypackages__` local packages layout is not supported. You must use virtual environments when using uv as the backend.
+  </Accordion>
+  <Accordion title="Lock strategy: inherit_metadata not supported">
+    The `inherit_metadata` lock strategy is not supported by uv. PDM will ignore this setting when writing to the lock file.
+  </Accordion>
+  <Accordion title="Update strategies">
+    Only the `all` and `reuse` update strategies are supported. Other strategies are not available with the uv backend.
+  </Accordion>
+  <Accordion title="Editable installs">
+    Editable requirements must be a local path. Remote editable requirements such as `-e git+<git_url>` are not supported.
+  </Accordion>
+  <Accordion title="Resolution excludes not supported">
+    The `excludes` setting under `[tool.pdm.resolution]` is not supported when using uv.
+  </Accordion>
+  <Accordion title="Cross-platform lock targets not needed">
+    uv always generates universal lock files, so the cross-platform lock target flags (`--platform`, etc.) are not needed and have no effect with the uv resolver.
+  </Accordion>
+  <Accordion title="Per-source package routing not supported">
+    The `include_packages` and `exclude_packages` settings under `[[tool.pdm.source]]` are not supported when using uv.
+  </Accordion>
+</AccordionGroup>
+
+## Switching between backends
+
+You can switch back to PDM's default backend at any time:
+
+```bash
+pdm config use_uv false
+```
+
+Lock files generated with the uv backend are compatible with the default backend — you do not need to regenerate them when switching.
+
+## Summary
+
+<CardGroup cols={2}>
+  <Card title="Enable uv" icon="bolt">
+    `pdm config use_uv true`
+  </Card>
+  <Card title="Disable uv" icon="circle-xmark">
+    `pdm config use_uv false`
+  </Card>
+  <Card title="Reuse uv Pythons" icon="python">
+    `pdm config python.install_root $(uv python dir --color never)`
+  </Card>
+  <Card title="Environment variable" icon="gear">
+    `PDM_USE_UV=true`
+  </Card>
+</CardGroup>

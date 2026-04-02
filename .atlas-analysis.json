@@ -1,28 +1,11 @@
 {
-  "$schema": "https://mintlify.com/docs.json",
-  "name": "PDM",
+  "projectType": "cli-tool",
+  "projectName": "PDM",
+  "projectDescription": "A modern Python package and dependency manager that supports the latest PEP standards including PEP 517, PEP 621, and PEP 582.",
   "theme": "palm",
-  "colors": {
-    "primary": "#b17dd9",
-    "light": "#d3b7e9",
-    "dark": "#b17dd9"
-  },
-  "favicon": "https://icons.duckduckgo.com/ip3/pdm-project.org.ico",
-  "logo": {
-    "light": "https://media.brand.dev/e5c9c06e-9115-4429-aeb3-b0d717592615.png",
-    "dark": "https://media.brand.dev/e5c9c06e-9115-4429-aeb3-b0d717592615.png"
-  },
-  "navbar": {
-    "primary": {
-      "type": "github",
-      "href": "https://github.com/pdm-project/pdm"
-    }
-  },
-  "footer": {
-    "socials": {
-      "github": "https://github.com/pdm-project/pdm"
-    }
-  },
+  "primaryColor": "#b17dd9",
+  "lightColor": "#d3b7e9",
+  "darkColor": null,
   "navigation": {
     "tabs": [
       {
@@ -91,5 +74,37 @@
         ]
       }
     ]
-  }
+  },
+  "keyFeatures": [
+    "Fast dependency resolver with PEP 517/621 support",
+    "Virtual environment and PEP 582 management",
+    "Centralized installation cache (pnpm-style)",
+    "Flexible plugin system for extending functionality",
+    "User scripts similar to npm run",
+    "Built-in Python interpreter installation",
+    "Cross-platform lock files with hash verification",
+    "Build and publish packages to PyPI"
+  ],
+  "publicApiSurface": [
+    "pdm add",
+    "pdm remove",
+    "pdm update",
+    "pdm install",
+    "pdm sync",
+    "pdm lock",
+    "pdm run",
+    "pdm build",
+    "pdm publish",
+    "pdm init",
+    "pdm new",
+    "pdm use",
+    "pdm venv",
+    "pdm python",
+    "pdm config",
+    "pdm self",
+    "pdm.cli.commands.base.BaseCommand",
+    "pdm.core.Core",
+    "pdm.project.Project",
+    "pdm.signals"
+  ]
 }

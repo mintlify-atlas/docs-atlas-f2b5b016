@@ -1,0 +1,596 @@
+---
+title: Python API reference
+description: Reference for the PDM Python API used to build plugins — the Core class, Project class, signals, and BaseCommand.
+---
+
+PDM exposes a Python API for plugin developers. Plugins are callables that receive a `Core` instance and can register new commands, extend configuration, and react to lifecycle signals.
+
+<Note>
+The plugin API is available since PDM 1.12.0. Signals require `blinker` which is included as a dependency of PDM.
+</Note>
+
+---
+
+## Plugin entry points
+
+Register a plugin via the `pdm` or `pdm.plugin` entry point group in your own package's `pyproject.toml`:
+
+```toml
+[project.entry-points.pdm]
+my-plugin = "my_plugin:plugin"
+```
+
+The entry point must be a callable that accepts a single `Core` argument:
+
+```python
+from pdm.core import Core
+
+def plugin(core: Core) -> None:
+    core.register_command(MyCommand, "my-command")
+    core.add_config("my_plugin.setting", ConfigItem("Description", default="value"))
+```
+
+---
+
+## `pdm.core.Core`
+
+The central application object. An instance is created once at startup, loads all plugins, and dispatches to subcommands.
+
+```python
+from pdm.core import Core
+```
+
+### Constructor
+
+```python
+Core()
+```
+
+Initialises the argument parser, registers built-in commands, and calls `load_plugins()`.
+
+### Attributes
+
+| Attribute | Type | Description |
+|---|---|---|
+| `version` | `str` | The running PDM version string |
+| `ui` | `termui.UI` | The terminal UI helper used for output |
+| `state` | `State` | Mutable state object shared across the current invocation |
+| `parser` | `argparse.ArgumentParser` | The root argument parser |
+| `subparsers` | `argparse._SubParsersAction` | The subparsers action for registering commands |
+| `commands` | `list[str]` | Names of all registered subcommands |
+| `project_class` | `type[Project]` | The project class to instantiate (replaceable by plugins) |
+| `repository_class` | `type[BaseRepository]` | The repository class (replaceable by plugins) |
+| `install_manager_class` | `type[InstallManager]` | The installer class (replaceable by plugins) |
+
+### Methods
+
+#### `register_command(command, name=None)`
+
+Register a subcommand with the CLI.
+
+```python
+def register_command(
+    self,
+    command: type[BaseCommand],
+    name: str | None = None,
+) -> None: ...
+```
+
+**Parameters:**
+
+<ParamField path="command" type="type[BaseCommand]" required>
+  The command class to register. Must be a subclass of `BaseCommand`.
+</ParamField>
+
+<ParamField path="name" type="str">
+  The subcommand name. Defaults to `command.name` if set, otherwise the class name.
+</ParamField>
+
+```python
+from pdm.cli.commands.base import BaseCommand
+
+class GreetCommand(BaseCommand):
+    """Say hello"""
+
+    def handle(self, project, options):
+        project.core.ui.echo("Hello from my plugin!")
+
+def plugin(core: Core) -> None:
+    core.register_command(GreetCommand, "greet")
+```
+
+#### `add_config(name, config_item)`
+
+Add a configuration key to PDM's configuration system.
+
+```python
+@staticmethod
+def add_config(name: str, config_item: ConfigItem) -> None: ...
+```
+
+**Parameters:**
+
+<ParamField path="name" type="str" required>
+  The dotted configuration key name, e.g. `"my_plugin.api_url"`.
+</ParamField>
+
+<ParamField path="config_item" type="ConfigItem" required>
+  A `ConfigItem` instance describing the key's default, type, and description.
+</ParamField>
+
+```python
+from pdm.project.config import ConfigItem
+
+def plugin(core: Core) -> None:
+    core.add_config(
+        "my_plugin.token",
+        ConfigItem(
+            description="API token for my plugin",
+            global_only=True,
+            env_var="MY_PLUGIN_TOKEN",
+        )
+    )
+```
+
+#### `create_project(root_path=None, is_global=False, global_config=None)`
+
+Create a `Project` instance.
+
+```python
+def create_project(
+    self,
+    root_path: str | Path | None = None,
+    is_global: bool = False,
+    global_config: str | None = None,
+) -> Project: ...
+```
+
+#### `main(args=None, prog_name=None, obj=None)`
+
+The main entry point. Parses arguments and dispatches to the selected subcommand.
+
+#### `load_plugins()`
+
+Load all plugins registered under the `pdm` and `pdm.plugin` entry point groups. Called automatically during `__init__`.
+
+---
+
+## `pdm.core.State`
+
+Mutable per-invocation state stored on `Core.state`.
+
+| Attribute | Type | Default | Description |
+|---|---|---|---|
+| `config_settings` | `dict[str, Any] \| None` | `None` | Config settings passed via `--config-setting` |
+| `exclude_newer` | `datetime \| None` | `None` | Exclude packages newer than this datetime |
+| `build_isolation` | `bool` | `True` | Whether build environments are isolated |
+| `enable_cache` | `bool` | `True` | Whether the HTTP and wheel caches are active |
+| `overrides` | `list[str]` | `[]` | Requirement override strings from `--override` |
+
+---
+
+## `pdm.project.Project`
+
+Represents a PDM project rooted at a `pyproject.toml`.
+
+```python
+from pdm.project import Project
+```
+
+### Constructor
+
+```python
+Project(
+    core: Core,
+    root_path: str | Path | None,
+    is_global: bool = False,
+    global_config: str | Path | None = None,
+)
+```
+
+### Key attributes and properties
+
+| Attribute / property | Type | Description |
+|---|---|---|
+| `core` | `Core` | The `Core` instance that owns this project |
+| `root` | `Path` | Absolute path to the project root directory |
+| `is_global` | `bool` | Whether this is the global project |
+| `name` | `str` | Project name from `pyproject.toml` |
+| `python` | `PythonInfo` | The resolved Python interpreter (settable) |
+| `pyproject` | `PyProject` | Parsed `pyproject.toml` data |
+| `lockfile` | `Lockfile` | The resolved lock file |
+| `config` | `Mapping[str, Any]` | Read-only merged configuration (project + global) |
+| `project_config` | `Config` | Read-write project-local config from `pdm.toml` |
+| `global_config` | `Config` | Read-write global config |
+| `environment` | `BaseEnvironment` | The active Python environment |
+| `scripts` | `dict` | Scripts defined in `[tool.pdm.scripts]` |
+| `cache_dir` | `Path` | Path to the PDM cache directory |
+| `is_distribution` | `bool` | Whether `tool.pdm.distribution` is `true` |
+| `python_requires` | `PySpecSet` | The `requires-python` specifier |
+
+### Key methods
+
+#### `all_dependencies`
+
+```python
+@property
+def all_dependencies(self) -> dict[str, list[Requirement]]: ...
+```
+
+Returns all dependency groups mapped to their `Requirement` objects.
+
+#### `get_dependencies(group, all_deps=None)`
+
+```python
+def get_dependencies(
+    self,
+    group: str = "default",
+    all_deps: dict | None = None,
+) -> list[Requirement]: ...
+```
+
+#### `add_dependencies(requirements, group, dev, write=True)`
+
+```python
+def add_dependencies(
+    self,
+    requirements: Iterable[Requirement],
+    group: str = "default",
+    dev: bool = False,
+    write: bool = True,
+) -> None: ...
+```
+
+#### `iter_groups()`
+
+```python
+def iter_groups(self) -> Iterable[str]: ...
+```
+
+Yields all group names defined in `pyproject.toml`.
+
+#### `resolve_interpreter()`
+
+```python
+def resolve_interpreter(self) -> PythonInfo: ...
+```
+
+Find the Python interpreter to use for this project.
+
+#### `cache(name)`
+
+```python
+def cache(self, name: str) -> Path: ...
+```
+
+Return the path to the named cache subdirectory (`hashes`, `http`, `wheels`, `metadata`, `packages`).
+
+### Example: accessing project properties in a plugin
+
+```python
+from pdm.signals import post_install
+
+@post_install.connect
+def on_install(project, candidates, dry_run, **kwargs):
+    print(f"Installed to: {project.root}")
+    print(f"Python: {project.python.executable}")
+    print(f"Using venv: {project.config['python.use_venv']}")
+```
+
+---
+
+## `pdm.cli.commands.base.BaseCommand`
+
+Base class for all PDM subcommands. Subclass this to create a plugin command.
+
+```python
+from pdm.cli.commands.base import BaseCommand
+```
+
+### Class attributes
+
+| Attribute | Type | Description |
+|---|---|---|
+| `name` | `str \| None` | The subcommand name. Defaults to the module/class name. |
+| `description` | `str \| None` | Help text. Falls back to the class docstring. |
+| `arguments` | `Sequence[Option]` | Pre-defined options added to the parser. Defaults to `verbose_option, global_option, project_option`. |
+
+### Methods to override
+
+#### `add_arguments(parser)`
+
+```python
+def add_arguments(self, parser: argparse.ArgumentParser) -> None:
+    pass
+```
+
+Override to add command-specific arguments to the argument parser.
+
+#### `handle(project, options)`
+
+```python
+def handle(self, project: Project, options: argparse.Namespace) -> None:
+    raise NotImplementedError
+```
+
+Override to implement the command logic. `project` is the resolved `Project` instance; `options` contains the parsed arguments.
+
+### Example: a minimal command plugin
+
+```python
+import argparse
+from pdm.cli.commands.base import BaseCommand
+from pdm.project import Project
+
+
+class HelloCommand(BaseCommand):
+    """Print a greeting"""
+
+    name = "hello"
+
+    def add_arguments(self, parser: argparse.ArgumentParser) -> None:
+        parser.add_argument("name", nargs="?", default="world")
+
+    def handle(self, project: Project, options: argparse.Namespace) -> None:
+        project.core.ui.echo(f"Hello, {options.name}!")
+
+
+def plugin(core) -> None:
+    core.register_command(HelloCommand)
+```
+
+---
+
+## `pdm.signals`
+
+PDM uses [blinker](https://blinker.readthedocs.io/) `NamedSignal` objects for lifecycle events. Connect handlers as functions or decorators.
+
+```python
+from pdm.signals import post_install, pre_lock
+```
+
+### Available signals
+
+<AccordionGroup>
+  <Accordion title="post_init">
+    Emitted after `pdm init` completes.
+
+    **Parameters:**
+
+    | Name | Type | Description |
+    |---|---|---|
+    | `sender` | `Project` | The initialised project |
+
+    ```python
+    from pdm.signals import post_init
+
+    @post_init.connect
+    def on_init(project, **kwargs):
+        project.core.ui.echo("Project initialised!")
+    ```
+  </Accordion>
+
+  <Accordion title="pre_lock / post_lock">
+    Emitted before and after dependency resolution.
+
+    **`pre_lock` parameters:**
+
+    | Name | Type | Description |
+    |---|---|---|
+    | `sender` | `Project` | The project |
+    | `requirements` | `list[Requirement]` | Requirements being resolved |
+    | `dry_run` | `bool` | Whether this is a dry run |
+
+    **`post_lock` parameters:**
+
+    | Name | Type | Description |
+    |---|---|---|
+    | `sender` | `Project` | The project |
+    | `resolution` | `dict` | The resolved candidates |
+    | `dry_run` | `bool` | Whether this was a dry run |
+
+    ```python
+    from pdm.signals import post_lock
+
+    @post_lock.connect
+    def on_lock(project, resolution, dry_run, **kwargs):
+        if not dry_run:
+            print(f"Locked {len(resolution)} packages")
+    ```
+  </Accordion>
+
+  <Accordion title="pre_install / post_install">
+    Emitted before and after package installation.
+
+    **Parameters:**
+
+    | Name | Type | Description |
+    |---|---|---|
+    | `sender` | `Project` | The project |
+    | `packages` | `list[Package]` | Packages being installed/installed |
+    | `dry_run` | `bool` | Whether this is a dry run |
+
+    ```python
+    from pdm.signals import post_install
+
+    @post_install.connect
+    def on_install(project, candidates, dry_run, **kwargs):
+        if not dry_run:
+            project.core.ui.echo("Installation complete")
+    ```
+  </Accordion>
+
+  <Accordion title="pre_build / post_build">
+    Emitted before and after `pdm build`.
+
+    **`pre_build` parameters:**
+
+    | Name | Type | Description |
+    |---|---|---|
+    | `sender` | `Project` | The project |
+    | `dest` | `str` | Output directory |
+    | `config_settings` | `dict[str, str] \| None` | Backend config settings |
+
+    **`post_build` parameters:**
+
+    | Name | Type | Description |
+    |---|---|---|
+    | `sender` | `Project` | The project |
+    | `artifacts` | `Sequence[str]` | Paths to built artifacts |
+    | `config_settings` | `dict[str, str] \| None` | Backend config settings |
+  </Accordion>
+
+  <Accordion title="pre_publish / post_publish">
+    Emitted before and after `pdm publish`.
+
+    **Parameters:**
+
+    | Name | Type | Description |
+    |---|---|---|
+    | `sender` | `Project` | The project |
+  </Accordion>
+
+  <Accordion title="pre_run / post_run">
+    Emitted before and after each top-level `pdm run` invocation.
+
+    **Parameters:**
+
+    | Name | Type | Description |
+    |---|---|---|
+    | `sender` | `Project` | The project |
+    | `script` | `str` | The script name |
+    | `args` | `Sequence[str]` | Extra arguments passed |
+  </Accordion>
+
+  <Accordion title="pre_script / post_script">
+    Emitted before and after each individual script execution within a run.
+
+    **Parameters:** Same as `pre_run` / `post_run`.
+  </Accordion>
+
+  <Accordion title="post_use">
+    Emitted after `pdm use` switches to a new interpreter.
+
+    **Parameters:**
+
+    | Name | Type | Description |
+    |---|---|---|
+    | `sender` | `Project` | The project |
+    | `python` | `PythonInfo` | The newly selected interpreter |
+  </Accordion>
+
+  <Accordion title="pre_invoke">
+    Emitted before any PDM command is invoked. Useful for global pre-command hooks.
+
+    **Parameters:**
+
+    | Name | Type | Description |
+    |---|---|---|
+    | `sender` | `Project` | The project |
+    | `command` | `str \| None` | The subcommand name |
+    | `options` | `Namespace` | The parsed argument namespace |
+  </Accordion>
+</AccordionGroup>
+
+### Signal connection patterns
+
+```python
+from pdm.signals import post_install, pre_lock
+
+# Function decorator
+@post_install.connect
+def handle_install(project, candidates, dry_run, **kwargs):
+    ...
+
+# Direct connection
+def handle_lock(project, requirements, dry_run, **kwargs):
+    ...
+pre_lock.connect(handle_lock)
+
+# Disconnect later
+pre_lock.disconnect(handle_lock)
+```
+
+<Tip>
+Always accept `**kwargs` in signal handlers to remain forward-compatible with new parameters added in future PDM releases.
+</Tip>
+
+---
+
+## `pdm.project.config.ConfigItem`
+
+Descriptor for a PDM configuration key. Used with `Core.add_config()`.
+
+```python
+from pdm.project.config import ConfigItem
+```
+
+### Constructor
+
+```python
+ConfigItem(
+    description: str,
+    default: Any = _NOT_SET,
+    global_only: bool = False,
+    env_var: str | None = None,
+    coerce: Callable = str,
+    replace: str | None = None,
+)
+```
+
+<ParamField path="description" type="str" required>
+  Human-readable description of the configuration key (shown by `pdm config`).
+</ParamField>
+
+<ParamField path="default" type="Any">
+  Default value. If omitted, the key is considered required and will not appear in `pdm config` output until set.
+</ParamField>
+
+<ParamField path="global_only" type="bool" default="false">
+  If `true`, the key can only be set in the global config, not in project-local `pdm.toml`.
+</ParamField>
+
+<ParamField path="env_var" type="str">
+  Environment variable name that can override this config value.
+</ParamField>
+
+<ParamField path="coerce" type="Callable" default="str">
+  A function to coerce the stored string value to the target type. Common choices: `int`, `ensure_boolean`, `split_by_comma`.
+</ParamField>
+
+<ParamField path="replace" type="str">
+  A deprecated key name that this item replaces; used for backward compatibility.
+</ParamField>
+
+### Example
+
+```python
+from pdm.project.config import ConfigItem
+from pdm.project.config import ensure_boolean
+
+def plugin(core) -> None:
+    core.add_config(
+        "my_plugin.enabled",
+        ConfigItem(
+            "Enable my plugin feature",
+            default=True,
+            global_only=False,
+            env_var="MY_PLUGIN_ENABLED",
+            coerce=ensure_boolean,
+        )
+    )
+```
+
+After registration, users can configure the key normally:
+
+```bash
+pdm config my_plugin.enabled false
+pdm config --local my_plugin.enabled true
+```
+
+And read it in your command:
+
+```python
+def handle(self, project, options):
+    enabled = project.config["my_plugin.enabled"]
+```

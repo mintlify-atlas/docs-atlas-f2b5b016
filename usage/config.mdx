@@ -1,0 +1,458 @@
+---
+title: "Configure PDM"
+description: "Manage PDM settings with pdm config — view, set, and delete configuration at the project, home, and site level."
+---
+
+PDM's `config` command works like `git config`. You can view, set, and delete configuration values across three configuration scopes: site (system-wide defaults), home (user-level), and project (local to the current project).
+
+## Basic usage
+
+Show all active configuration:
+
+```bash
+pdm config
+```
+
+Get a single configuration value:
+
+```bash
+pdm config pypi.url
+```
+
+Set a value in the home (global) configuration:
+
+```bash
+pdm config pypi.url "https://test.pypi.org/simple"
+```
+
+Set a value in the project-local configuration:
+
+```bash
+pdm config --local pypi.url "https://test.pypi.org/simple"
+```
+
+Delete a configuration key:
+
+```bash
+pdm config --delete pypi.url
+```
+
+Open the configuration file in your default editor:
+
+```bash
+pdm config --edit
+```
+
+<Note>
+Local configuration is stored in `pdm.toml` at the project root. This file should typically be added to `.gitignore` unless you want to share index or install settings with your team.
+</Note>
+
+## Configuration files
+
+Configuration is resolved in the following order, with earlier entries taking precedence:
+
+1. `<PROJECT_ROOT>/pdm.toml` — project configuration
+2. `<CONFIG_ROOT>/config.toml` — home (user) configuration
+3. `<SITE_CONFIG_ROOT>/config.toml` — site (system) configuration
+
+<AccordionGroup>
+  <Accordion title="Config root locations by OS">
+    **`<CONFIG_ROOT>`**
+    - Linux: `$XDG_CONFIG_HOME/pdm` (typically `~/.config/pdm`)
+    - macOS: `~/Library/Application Support/pdm`
+    - Windows: `%USERPROFILE%\AppData\Local\pdm\pdm`
+
+    **`<SITE_CONFIG_ROOT>`**
+    - Linux: `$XDG_CONFIG_DIRS/pdm` (typically `/etc/xdg/pdm`)
+    - macOS: `/Library/Application Support/pdm`
+    - Windows: `%ProgramData%\pdm\pdm`
+  </Accordion>
+</AccordionGroup>
+
+When using the `-g/--global` flag, the project config is replaced by `<CONFIG_ROOT>/global-project/pdm.toml`.
+
+## Configure the Python finder
+
+PDM searches for Python interpreters from these sources by default:
+
+- `venv` — PDM virtualenv location
+- `path` — `PATH` environment variable
+- `pyenv` — pyenv install root
+- `rye` — rye toolchain install root
+- `asdf` — asdf python install root
+- `winreg` — Windows registry (Windows only)
+
+Restrict or reorder the providers using `python.providers`:
+
+```bash
+# Use only the rye provider
+pdm config python.providers rye
+
+# Use pyenv and asdf, in that order
+pdm config python.providers pyenv,asdf
+```
+
+## Configure package indexes
+
+You can specify package indexes in `pyproject.toml` or via `pdm config`.
+
+### Change the default index
+
+```bash
+pdm config pypi.url "https://test.pypi.org/simple"
+```
+
+### Add an extra index
+
+```bash
+pdm config pypi.extra.url "https://extra.pypi.org/simple"
+```
+
+### Add a source in pyproject.toml
+
+```toml
+[[tool.pdm.source]]
+name = "private"
+url = "https://private.pypi.org/simple"
+verify_ssl = true
+```
+
+<Tip>
+To replace the default PyPI index entirely, add a source named `pypi`. PDM will use it instead of `https://pypi.org/simple`.
+
+```toml
+[[tool.pdm.source]]
+url = "https://private.pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+```
+</Tip>
+
+### Available index options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `url` | string | — | Index URL |
+| `verify_ssl` | bool | `true` | Verify SSL certificates |
+| `username` | string | — | Username for authentication |
+| `password` | string | — | Password for authentication |
+| `type` | string | `index` | `index` (PEP 503) or `find_links` |
+
+<Note>
+`index` sources behave like pip's `--index-url` and `--extra-index-url`. `find_links` sources work like pip's `--find-links` and are useful for local directories of wheels.
+
+```toml
+[[tool.pdm.source]]
+name = "local"
+url = "file:///${PROJECT_ROOT}/packages"
+type = "find_links"
+```
+</Note>
+
+### Source resolution order
+
+By default, PDM builds the final source list in this order:
+
+1. `pypi.url` if `pypi` does not appear as a source name in `pyproject.toml`
+2. Sources in `pyproject.toml`
+3. `pypi.<name>.url` from PDM config
+
+To disable extra indexes defined in PDM config and use only those in `pyproject.toml`:
+
+```bash
+pdm config pypi.ignore_stored_index true
+```
+
+### Respect source order
+
+By default all sources are treated as equal and PDM picks the best match across all of them. To prefer a specific source and fall back to others only when a package is missing:
+
+```toml
+[tool.pdm.resolution]
+respect-source-order = true
+
+[[tool.pdm.source]]
+name = "private"
+url = "https://private.pypi.org/simple"
+
+[[tool.pdm.source]]
+name = "pypi"
+url = "https://pypi.org/simple"
+```
+
+### Per-package index binding
+
+Use `include_packages` and `exclude_packages` to route specific packages to specific sources:
+
+```toml
+[[tool.pdm.source]]
+name = "private"
+url = "https://private.pypi.org/simple"
+include_packages = ["foo", "foo-*"]
+exclude_packages = ["bar-*"]
+```
+
+Any package matching `foo` or `foo-*` is only looked up in `private`. Any package matching `bar-*` is searched everywhere except `private`. Both fields accept glob patterns and are optional.
+
+### Store credentials with the index
+
+Reference environment variables in the URL to avoid hardcoding secrets:
+
+```toml
+[[tool.pdm.source]]
+name = "private"
+url = "https://${PRIVATE_PYPI_USERNAME}:${PRIVATE_PYPI_PASSWORD}@private.pypi.org/simple"
+```
+
+### Index configuration merging
+
+You can store the URL in `pyproject.toml` and credentials separately in the PDM config:
+
+```toml
+# pyproject.toml
+[[tool.pdm.source]]
+name = "private"
+url = "https://private.pypi.org/simple"
+```
+
+```bash
+# ~/.config/pdm/config.toml (via pdm config)
+pdm config pypi.private.username "foo"
+pdm config pypi.private.password "bar"
+```
+
+PDM merges these using the `name` field.
+
+### HTTPS certificates
+
+Configure a custom CA bundle or client certificate for an index or repository:
+
+```bash
+pdm config pypi.ca_certs /path/to/ca_bundle.pem
+pdm config repository.pypi.ca_certs /path/to/ca_bundle.pem
+```
+
+To use the system trust store instead of the bundled certifi certificates (requires Python 3.10+ and `truststore`):
+
+```bash
+pdm self add truststore
+```
+
+PDM also reads `REQUESTS_CA_BUNDLE` and `CURL_CA_BUNDLE` environment variables automatically.
+
+## Password management with keyring
+
+When `keyring` is installed and supported, PDM stores and retrieves passwords from the system keyring rather than writing them to the config file. This works for both indexes and upload repositories.
+
+Service names follow these patterns:
+- Index: `pdm-pypi-<name>`
+- Repository: `pdm-repository-<name>`
+
+Install `keyring` into the PDM environment:
+
+```bash
+pdm self add keyring
+```
+
+Or, if you have a globally installed `keyring`, add its `bin` directory to `PATH`:
+
+```bash
+export PATH=$PATH:path/to/keyring/bin
+```
+
+### Azure Artifacts
+
+For Azure Artifacts, use the `artifacts-keyring` package:
+
+```bash
+pdm self add keyring artifacts-keyring
+```
+
+Then add the feed URL to `pyproject.toml`:
+
+```toml
+[[tool.pdm.source]]
+name = "NameOfFeed"
+url = "https://pkgs.dev.azure.com/[org name]/_packaging/[feed name]/pypi/simple/"
+```
+
+## Configure upload repositories
+
+The `pdm publish` command reads repository credentials from the global config file (`<CONFIG_ROOT>/config.toml`):
+
+```toml
+[repository.pypi]
+username = "frostming"
+password = "<secret>"
+
+[repository.company]
+url = "https://pypi.company.org/legacy/"
+username = "frostming"
+password = "<secret>"
+ca_certs = "/path/to/custom-cacerts.pem"
+```
+
+Set these values via `pdm config`:
+
+```bash
+pdm config repository.pypi.username "__token__"
+pdm config repository.pypi.password "my-pypi-token"
+
+pdm config repository.company.url "https://pypi.company.org/legacy/"
+pdm config repository.company.ca_certs "/path/to/custom-cacerts.pem"
+```
+
+Or pass them with environment variables:
+
+```bash
+export PDM_PUBLISH_REPO=...
+export PDM_PUBLISH_USERNAME=...
+export PDM_PUBLISH_PASSWORD=...
+export PDM_PUBLISH_CA_CERTS=...
+```
+
+<Note>
+Repositories (for publishing) and indexes (for resolution) use separate configuration. The `pypi` and `testpypi` repository URLs are filled in by default — you only need to set credentials.
+</Note>
+
+## Central installation caches
+
+When the same wheel is required by multiple projects, PDM can store a single copy in a centralized cache and create links from each project. Enable it globally or per-project:
+
+```bash
+# Enable globally
+pdm config install.cache on
+
+# Enable for this project only
+pdm config --local install.cache on
+```
+
+Caches are stored under `$(pdm config cache_dir)/packages`. Two link methods are available:
+
+- `symlink` (default) — create symbolic links to the cached files
+- `hardlink` — create hard links to the cached files
+
+Switch between methods:
+
+```bash
+pdm config install.cache_method hardlink
+```
+
+<Note>
+Only packages installed from a package index source can be cached. Manually deleting cache entries can break projects that rely on them.
+</Note>
+
+## Resolution options
+
+### Allow prereleases
+
+By default, the resolver ignores prereleases unless no stable version satisfies the requirement. To allow prereleases for a project:
+
+```toml
+[tool.pdm.resolution]
+allow-prereleases = true
+```
+
+### Exclude packages from the lock file
+
+To skip specific packages and their dependencies during resolution entirely:
+
+```toml
+[tool.pdm.resolution]
+excludes = ["requests"]
+```
+
+## Constant command arguments
+
+Add default flags to individual PDM commands in `pyproject.toml`:
+
+```toml
+[tool.pdm.options]
+add = ["--no-isolation", "--no-self"]
+install = ["--no-self"]
+lock = ["--no-cross-platform"]
+```
+
+With this config, `pdm add requests` is equivalent to `pdm add --no-isolation --no-self requests`.
+
+## Suppress package warnings
+
+When a package's supported Python range does not cover your project's `requires-python`, PDM prints a warning. Suppress these per-package:
+
+```toml
+[tool.pdm]
+ignore_package_warnings = ["scipy", "tensorflow-*"]
+```
+
+Each item is a case-insensitive glob pattern matched against the package name.
+
+## Configuration key reference
+
+<AccordionGroup>
+  <Accordion title="python.*">
+    | Key | Default | Env var | Description |
+    |-----|---------|---------|-------------|
+    | `python.providers` | `[]` | — | Ordered list of Python finder providers |
+    | `python.use_pyenv` | `true` | — | Use the pyenv interpreter |
+    | `python.use_venv` | `true` | `PDM_USE_VENV` | Use virtual environments when available |
+    | `python.use_python_version` | `true` | `PDM_USE_PYTHON_VERSION` | Read `.python-version` file for interpreter selection |
+    | `python.install_root` | platform-specific | — | Root directory for installed Python interpreters (global only) |
+  </Accordion>
+  <Accordion title="venv.*">
+    | Key | Default | Env var | Description |
+    |-----|---------|---------|-------------|
+    | `venv.location` | platform-specific | — | Parent directory for virtualenvs (global only) |
+    | `venv.backend` | `virtualenv` | `PDM_VENV_BACKEND` | Default backend for creating virtualenvs |
+    | `venv.in_project` | `true` | `PDM_VENV_IN_PROJECT` | Create `.venv` under the project root |
+    | `venv.prompt` | `{project_name}-{python_version}` | `PDM_VENV_PROMPT` | Virtualenv prompt template |
+    | `venv.with_pip` | `false` | `PDM_VENV_WITH_PIP` | Install pip when creating a new venv |
+  </Accordion>
+  <Accordion title="install.*">
+    | Key | Default | Env var | Description |
+    |-----|---------|---------|-------------|
+    | `install.parallel` | `true` | `PDM_INSTALL_PARALLEL` | Run installation and uninstallation in parallel |
+    | `install.cache` | `false` | — | Cache wheel installations and use symlinks |
+    | `install.cache_method` | `symlink` | — | Link method: `symlink` or `hardlink` |
+  </Accordion>
+  <Accordion title="pypi.*">
+    | Key | Default | Env var | Description |
+    |-----|---------|---------|-------------|
+    | `pypi.url` | `https://pypi.org/simple` | `PDM_PYPI_URL` | Default package index URL |
+    | `pypi.verify_ssl` | `true` | `PDM_PYPI_VERIFY_SSL` | Verify SSL certificate for PyPI |
+    | `pypi.username` | — | `PDM_PYPI_USERNAME` | Username for PyPI authentication |
+    | `pypi.password` | — | `PDM_PYPI_PASSWORD` | Password for PyPI authentication |
+    | `pypi.ca_certs` | — | — | Path to CA certificate bundle (global only) |
+    | `pypi.ignore_stored_index` | `false` | `PDM_IGNORE_STORED_INDEX` | Ignore config-defined indexes not in pyproject.toml |
+    | `pypi.client_cert` | — | — | Client certificate file path (global only) |
+    | `pypi.client_key` | — | — | Client certificate key file path (global only) |
+    | `pypi.json_api` | `false` | `PDM_PYPI_JSON_API` | Use PyPI JSON API for package metadata |
+  </Accordion>
+  <Accordion title="strategy.*">
+    | Key | Default | Env var | Description |
+    |-----|---------|---------|-------------|
+    | `strategy.update` | `reuse` | — | Default strategy for updating packages |
+    | `strategy.save` | `minimum` | — | How to save version constraints when adding packages |
+    | `strategy.resolve_max_rounds` | `10000` | `PDM_RESOLVE_MAX_ROUNDS` | Max rounds of the resolution process |
+    | `strategy.inherit_metadata` | `true` | — | Inherit groups and markers from parent packages |
+  </Accordion>
+  <Accordion title="global_project.*">
+    | Key | Default | Env var | Description |
+    |-----|---------|---------|-------------|
+    | `global_project.fallback` | `false` | — | Use global project when no local project is found (global only) |
+    | `global_project.fallback_verbose` | `true` | — | Show message when global project is used implicitly (global only) |
+    | `global_project.path` | platform-specific | — | Path to the global project (global only) |
+    | `global_project.user_site` | `false` | — | Install to user site (global only) |
+  </Accordion>
+  <Accordion title="Other keys">
+    | Key | Default | Env var | Description |
+    |-----|---------|---------|-------------|
+    | `cache_dir` | platform-specific | `PDM_CACHE_DIR` | Root directory for cached files (global only) |
+    | `log_dir` | platform-specific | `PDM_LOG_DIR` | Root directory for log files (global only) |
+    | `check_update` | `true` | `PDM_CHECK_UPDATE` | Check for newer PDM versions (global only) |
+    | `build_isolation` | `true` | `PDM_BUILD_ISOLATION` | Isolate build environment from project environment |
+    | `request_timeout` | `15` | `PDM_REQUEST_TIMEOUT` | Network request timeout in seconds (global only) |
+    | `use_uv` | `false` | `PDM_USE_UV` | Use uv for resolution and installation |
+    | `lock.format` | `pdm` | `PDM_LOCK_FORMAT` | Lock file format: `pdm` or `pylock` |
+    | `scripts.show_header` | `false` | `PDM_SCRIPTS_SHOW_HEADER` | Display script name and help before running |
+  </Accordion>
+</AccordionGroup>

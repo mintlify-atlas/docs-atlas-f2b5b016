@@ -1,0 +1,182 @@
+---
+title: "Lock targets"
+description: "Generate lock files for specific Python versions, platforms, or implementations to ensure reproducible installs in heterogeneous environments."
+---
+
+<Note>
+Lock targets were added in PDM 2.17.0.
+</Note>
+
+By default, PDM generates a single lock file that works across all platforms within the Python version range specified by `requires-python` in `pyproject.toml`. This is convenient during development — generate once, replicate everywhere.
+
+However, some projects have dependencies that vary by platform or Python version:
+
+```toml
+[project]
+name = "myproject"
+requires-python = ">=3.9"
+dependencies = [
+    "numpy<1.25; python_version < '3.9'",
+    "numpy>=1.25; python_version >= '3.9'",
+    "pywin32; sys_platform == 'win32'",
+]
+```
+
+For projects like this, a single resolution covering all platforms and Python versions may not be achievable. Lock targets let you generate lock files scoped to specific environments.
+
+## Specifying lock targets
+
+Pass one or more of these flags to `pdm lock`:
+
+<AccordionGroup>
+  <Accordion title="--python">
+    A [PEP 440](https://www.python.org/dev/peps/pep-0440/) compatible version specifier.
+
+    ```bash
+    pdm lock --python=">=3.9,<3.10"
+    pdm lock --python="==3.9.*"
+    ```
+
+    The shorthand `--python=3.10` is equivalent to `--python=">=3.10"`.
+
+    The `--python` range is always further constrained by the project's `requires-python`. For example, if `requires-python = ">=3.9"` and you pass `--python="<3.11"`, the effective target is `>=3.9,<3.11`.
+  </Accordion>
+  <Accordion title="--platform">
+    A platform specifier. Available options:
+
+    - `linux`
+    - `windows`
+    - `macos`
+    - `alpine`
+    - `windows_amd64`
+    - `windows_x86`
+    - `windows_arm64`
+    - `macos_arm64`
+    - `macos_x86_64`
+    - `macos_X_Y_arm64`
+    - `macos_X_Y_x86_64`
+    - `manylinux_X_Y_x86_64`
+    - `manylinux_X_Y_aarch64`
+    - `musllinux_X_Y_x86_64`
+    - `musllinux_X_Y_aarch64`
+
+    ```bash
+    pdm lock --platform=linux
+    pdm lock --platform=windows_amd64
+    ```
+  </Accordion>
+  <Accordion title="--implementation">
+    A Python implementation. Supported values: `cpython`, `pypy`, `pyston`.
+
+    ```bash
+    pdm lock --implementation=pypy
+    ```
+  </Accordion>
+</AccordionGroup>
+
+You can combine criteria. Criteria you omit are left unconstrained — for example, `--platform=linux` without `--python` generates a lock for Linux across all implementations.
+
+## Separate lock files vs. a single merged lock file
+
+PDM supports both approaches.
+
+### Separate lock files
+
+Generate a dedicated lock file per target with `--lockfile`:
+
+```bash
+# Linux, Python 3.9
+pdm lock --platform=linux --python="==3.9.*" --lockfile=py39-linux.lock
+```
+
+Install using that lock file:
+
+```bash
+pdm install --lockfile=py39-linux.lock
+```
+
+### Merging targets into one lock file
+
+Use `--append` to add a target to an existing lock file:
+
+```bash
+pdm lock --python=">=3.10"
+pdm lock --python="<3.10" --append
+```
+
+A single lock file can contain multiple targets. PDM's installer selects the correct packages at install time based on the running Python and platform.
+
+<Tip>
+A single lock file is easier to maintain when updating dependencies — one update command covers all targets. The trade-off is that resolution takes longer and you cannot specify different resolution strategies per target.
+</Tip>
+
+## Practical example
+
+Given this `pyproject.toml`:
+
+```toml
+[project]
+name = "myproject"
+requires-python = ">=3.9"
+dependencies = [
+    "numpy<1.25; python_version < '3.10'",
+    "numpy>=1.25; python_version >= '3.10'",
+    "pandas"
+]
+
+[project.optional-dependencies]
+windows = ["pywin32"]
+macos = ["pyobjc"]
+```
+
+Generate a multi-target lock file plus platform-specific lock files for optional groups:
+
+```bash
+pdm lock --python=">=3.10"
+pdm lock --python="<3.10" --append
+
+pdm lock --platform=windows --python=">=3.10" --lockfile=py310-windows.lock --with windows
+pdm lock --platform=macos --python=">=3.10" --lockfile=py310-macos.lock --with macos
+```
+
+This produces three lock files:
+
+<CardGroup cols={1}>
+  <Card title="pdm.lock" icon="lock">
+    The default lock file. Covers all platforms and Python versions `>=3.9`. No platform-specific optional dependencies. Contains two numpy versions — one for Python `<3.10`, one for `>=3.10`. PDM selects the correct version at install time.
+  </Card>
+  <Card title="py310-windows.lock" icon="windows">
+    Lock file for Windows, Python `>=3.10`. Includes the `windows` optional group (`pywin32`).
+  </Card>
+  <Card title="py310-macos.lock" icon="apple">
+    Lock file for macOS, Python `>=3.10`. Includes the `macos` optional group (`pyobjc`).
+  </Card>
+</CardGroup>
+
+## CI/CD and Docker usage
+
+Lock targets are particularly useful when your development machine differs from your deployment environment.
+
+### CI example
+
+```yaml
+- name: Install dependencies (Linux, Python 3.12)
+  run: pdm install --lockfile=py312-linux.lock
+```
+
+### Docker example
+
+```dockerfile
+FROM python:3.12-slim AS builder
+RUN pip install -U pdm
+COPY pyproject.toml py312-linux.lock README.md /project/
+COPY src/ /project/src
+WORKDIR /project
+RUN pdm install --check --prod --no-editable --lockfile=py312-linux.lock
+```
+
+## How PDM resolves markers
+
+When a lock target is specified, PDM evaluates environment markers (like `sys_platform == 'win32'` or `python_version >= '3.10'`) against the target criteria at resolution time rather than at install time. This means the lock file contains only the packages applicable to that target, making installs faster and more predictable.
+
+Without a lock target, PDM preserves all markers in the lock file so the same file can be used across environments.
